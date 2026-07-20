@@ -93,6 +93,7 @@ function App() {
   
   // Page 5 specific state
   const [selectedArbitragePair, setSelectedArbitragePair] = useState<[number, number]>([4, 19]);
+  const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   const [page, setPage] = useState<PageId>('page1');
   const [activeView, setActiveView] = useState<'overview' | 'detail'>('overview');
   
@@ -862,7 +863,7 @@ function App() {
         orient: 'vertical',
         right: 0,
         top: 'center',
-        inRange: { color: ['#2962ff', '#ffffff', '#f23645'] }
+        inRange: { color: ['#089981', '#ffffff', '#f23645'] }
       },
       series: [{
         type: 'heatmap',
@@ -897,7 +898,26 @@ function App() {
     if (!histData.length) return {};
     return {
       title: { text: '价差概率分布', left: 8, top: 4, textStyle: { fontSize: 12 } },
-      tooltip: { trigger: 'axis', formatter: (p: any) => `区间: ${p[0].name}<br/>频次: <b>${p[0].value}</b> 天` },
+      tooltip: { 
+        trigger: 'axis', 
+        formatter: (params: any) => {
+          const p = params[0];
+          const binIndex = p.dataIndex;
+          let countLess = 0;
+          let countGreater = 0;
+          for(let i=0; i<histData.length; i++) {
+            if(i < binIndex) countLess += histData[i].count;
+            if(i > binIndex) countGreater += histData[i].count;
+          }
+          const totalCount = histData.reduce((acc: any, d: any) => acc + d.count, 0);
+          const probLess = totalCount ? ((countLess / totalCount) * 100).toFixed(1) : 0;
+          const probGreater = totalCount ? ((countGreater / totalCount) * 100).toFixed(1) : 0;
+          const probSelf = totalCount ? ((p.value / totalCount) * 100).toFixed(1) : 0;
+          return `区间: ${p.name}<br/>频次: <b>${p.value}</b> 天 (${probSelf}%)<br/>` +
+                 `<span style="color:#089981">小于该区间概率: <b>${probLess}%</b></span><br/>` +
+                 `<span style="color:#f23645">大于该区间概率: <b>${probGreater}%</b></span>`;
+        } 
+      },
       grid: { left: 40, right: 20, top: 30, bottom: 20 },
       xAxis: { type: 'category', data: histData.map((d: any) => d.range), axisLabel: { fontSize: 9, rotate: 45 } },
       yAxis: { type: 'value', splitLine: { show: false } },
@@ -979,7 +999,7 @@ function App() {
           )}
         </div>
         <div className="tv-toolbar-right">
-          {data && <span style={{ fontSize: 11, color: '#787b86', marginRight: 8 }}>{data.meta.date_range.start} — {data.meta.date_range.end}</span>}
+          {data && <span style={{ fontSize: 11, color: '#787b86', marginRight: 8 }}>{data.meta.date_range.start} ~ {data.meta.date_range.end}</span>}
           <button className="tv-toolbar-btn publish">发布策略</button>
         </div>
       </div>
@@ -1072,26 +1092,28 @@ function App() {
           )}
           {/* ===== PAGE 5: ARBITRAGE ANALYSIS ===== */}
           {page === 'page5' && (
-            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '4px' }}>
-              <div style={{ height: '60%', borderBottom: '1px solid #e0e3eb' }}>
-                <ReactECharts 
-                  option={buildArbitrageHeatmap()} 
-                  style={{ height: '100%' }} 
-                  notMerge 
-                  onEvents={{
-                    click: (params: any) => {
-                      if (params.seriesType === 'heatmap') {
-                        setSelectedArbitragePair([params.value[0] + 1, params.value[1] + 1]);
+            <div style={{ display: 'flex', height: '100%', padding: '4px' }}>
+              <div style={{ width: '50%', height: '100%', borderRight: '1px solid #e0e3eb', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                <div style={{ height: '90%', aspectRatio: '1 / 1' }}>
+                  <ReactECharts 
+                    option={buildArbitrageHeatmap()} 
+                    style={{ height: '100%', width: '100%' }} 
+                    notMerge 
+                    onEvents={{
+                      click: (params: any) => {
+                        if (params.seriesType === 'heatmap') {
+                          setSelectedArbitragePair([params.value[0] + 1, params.value[1] + 1]);
+                        }
                       }
-                    }
-                  }}
-                />
+                    }}
+                  />
+                </div>
               </div>
-              <div style={{ height: '40%', display: 'flex' }}>
-                <div style={{ width: '60%', borderRight: '1px solid #e0e3eb' }}>
+              <div style={{ width: '50%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ height: '50%', borderBottom: '1px solid #e0e3eb' }}>
                   <ReactECharts option={buildArbitrageTrend()} style={{ height: '100%' }} notMerge />
                 </div>
-                <div style={{ width: '40%' }}>
+                <div style={{ height: '50%' }}>
                   <ReactECharts option={buildArbitrageHistogram()} style={{ height: '100%' }} notMerge />
                 </div>
               </div>
@@ -1100,7 +1122,8 @@ function App() {
         </div>
 
         {/* RIGHT SIDEBAR */}
-        <div className="tv-right-sidebar">
+        {isSidebarVisible && (
+          <div className="tv-right-sidebar">
           <div className="tv-watchlist-header">
             <span>自选表</span>
             <div className="tv-watchlist-header-icons"><span>+</span><span>⊞</span><span>⋯</span></div>
@@ -1148,11 +1171,12 @@ function App() {
               </div>
             </div>
           </div>
-        </div>
+          </div>
+        )}
 
         {/* FAR RIGHT ICON TABS */}
         <div className="tv-right-tabs">
-          <button className="tv-right-tab-btn active">☰</button>
+          <button className={`tv-right-tab-btn ${isSidebarVisible ? 'active' : ''}`} onClick={() => setIsSidebarVisible(!isSidebarVisible)}>☰</button>
           <button className="tv-right-tab-btn">⏱</button>
           <button className="tv-right-tab-btn">🔔</button>
           <button className="tv-right-tab-btn">▦</button>
