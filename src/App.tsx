@@ -22,7 +22,7 @@ interface DataPayload {
   meta: { total_hourly_records: number; date_range: { start: string; end: string }; generated_at: string; total_daily_records: number; total_weekly_records: number; total_monthly_records: number; };
 }
 type TimeScale = 'hourly' | 'daily' | 'weekly' | 'monthly';
-type PageId = 'page1' | 'page2' | 'page3' | 'page4' | 'page5' | 'page6';
+type PageId = 'page1' | 'page2' | 'page3' | 'page4' | 'page5' | 'page6' | 'page7';
 
 // ===============================
 // Constants
@@ -55,6 +55,7 @@ const PAGE_BTNS: { key: PageId; label: string }[] = [
   { key: 'page4', label: '现货价格对比' },
   { key: 'page5', label: '日前结算价差' },
   { key: 'page6', label: '日滚动交易机会' },
+  { key: 'page7', label: '策略：价差套利' },
 ];
 
 // ===============================
@@ -94,7 +95,9 @@ function App() {
   
   // Page 5 specific state
   const [selectedArbitragePair, setSelectedArbitragePair] = useState<[number, number]>([4, 19]);
-  const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
+    const [strategySpreadPointA, setStrategySpreadPointA] = useState<number>(16);
+  const [strategySpreadPointB, setStrategySpreadPointB] = useState<number>(14);
+const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   const [weatherMetric, setWeatherMetric] = useState<'wind'|'solar'|'load'|'hydro'>('wind');
   const [page, setPage] = useState<PageId>('page1');
@@ -872,7 +875,98 @@ function App() {
     return { heatmapData, trendData, histData, avgPrices };
   };
 
-  const buildArbitrageHeatmap = () => {
+  
+  const buildStrategyScannerHeatmap = () => {
+    if (!strategyScannerData || strategyScannerData.length === 0) return {};
+    const periods = Array.from({length: 24}, (_, i) => String(i + 1));
+    const values = strategyScannerData.map(d => d[2]);
+    const maxVal = Math.max(...values);
+    const minVal = Math.min(...values);
+    const maxAbs = Math.max(Math.abs(maxVal), Math.abs(minVal));
+
+    return {
+      title: { text: '全时段平均套利空间矩阵 (日前 - 现货)', left: 0, top: 0, textStyle: { color: '#131722', fontSize: 13, fontWeight: 600 } },
+      tooltip: {
+        position: 'top',
+        formatter: (p: any) => {
+          const a = p.value[0] + 1;
+          const b = p.value[1] + 1;
+          const space = p.value[2].toFixed(2);
+          return `时段 A: ${a}<br/>时段 B: ${b}<br/>平均套利空间: <b>${space}</b> 元/MWh`;
+        }
+      },
+      grid: { height: '80%', top: 35, right: 45, left: 35, bottom: 35 },
+      xAxis: { type: 'category', data: periods, name: '时段A', splitArea: { show: true }, axisLabel: { fontSize: 10 } },
+      yAxis: { type: 'category', data: periods, name: '时段B', splitArea: { show: true }, axisLabel: { fontSize: 10 } },
+      visualMap: {
+        min: -maxAbs,
+        max: maxAbs,
+        calculable: true,
+        orient: 'vertical',
+        right: 0,
+        top: 'center',
+        itemWidth: 10,
+        inRange: { color: ['#089981', '#ffffff', '#f23645'] }
+      },
+      series: [{
+        name: '套利空间',
+        type: 'heatmap',
+        data: strategyScannerData,
+        label: { show: false },
+        emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0, 0, 0, 0.5)' } }
+      }]
+    };
+  };
+
+  const buildStrategyTrendLineChart = () => {
+    if (!strategySpreadData || strategySpreadData.length === 0) return {};
+    const dates = strategySpreadData.map(d => d.date);
+    const da = strategySpreadData.map(d => d.daSpread);
+    const rt = strategySpreadData.map(d => d.rtSpread);
+    return {
+      title: { text: `价差趋势对比 (时段 ${strategySpreadPointB} - 时段 ${strategySpreadPointA})`, left: 0, top: 0, textStyle: { color: '#131722', fontSize: 13, fontWeight: 600 } },
+      tooltip: { 
+        trigger: 'axis', 
+        axisPointer: { type: 'line', lineStyle: { type: 'dashed', color: '#888', width: 1 } }
+      },
+      legend: { data: ['日前结算价差', '加权交易均价差'], top: 0, right: 0, textStyle: { fontSize: 12 } },
+      grid: { top: 35, bottom: 25, left: 60, right: 20, containLabel: false },
+      xAxis: { type: 'category', data: dates, boundaryGap: true, axisLabel: { fontSize: 10 } },
+      yAxis: { type: 'value', name: '元/MWh', nameGap: 10, splitLine: { lineStyle: { color: '#f0f3fa' } }, axisLabel: { fontSize: 10, width: 45, overflow: 'truncate' } },
+      series: [
+        { name: '日前结算价差', type: 'line', data: da, itemStyle: { color: '#2962ff' }, smooth: true, lineStyle: { width: 2 } },
+        { name: '加权交易均价差', type: 'line', data: rt, itemStyle: { color: '#e91e63' }, smooth: true, lineStyle: { width: 2 } }
+      ]
+    };
+  };
+
+  const buildStrategySpreadBarChart = () => {
+    if (!strategySpreadData || strategySpreadData.length === 0) return {};
+    const dates = strategySpreadData.map(d => d.date);
+    const spaces = strategySpreadData.map(d => d.space);
+    return {
+      title: { text: `套利收益空间 (日前价差 - 加权均价差)`, left: 0, top: 0, textStyle: { color: '#131722', fontSize: 13, fontWeight: 600 } },
+      tooltip: { 
+        trigger: 'axis', 
+        axisPointer: { type: 'line', lineStyle: { type: 'dashed', color: '#888', width: 1 } }
+      },
+      grid: { top: 35, bottom: 25, left: 60, right: 20, containLabel: false },
+      xAxis: { type: 'category', data: dates, boundaryGap: true, axisLabel: { fontSize: 10 } },
+      yAxis: { type: 'value', name: '元/MWh', nameGap: 10, splitLine: { lineStyle: { color: '#f0f3fa' } }, axisLabel: { fontSize: 10, width: 45, overflow: 'truncate' } },
+      series: [
+        { 
+          name: '套利空间', 
+          type: 'bar', 
+          data: spaces,
+          itemStyle: {
+            color: (params: any) => params.value > 0 ? '#f23645' : '#089981'
+          }
+        }
+      ]
+    };
+  };
+
+const buildArbitrageHeatmap = () => {
     const { heatmapData, avgPrices } = getArbitrageData();
     if (!heatmapData.length) return {};
     
@@ -972,7 +1066,119 @@ function App() {
     };
   };
 
-  // ===== LOADING / ERROR =====
+  
+  // ===============================
+  // Page 7: Strategy Spread (Formula: 日前 - 现货)
+  // ===============================
+  const strategyFilteredData = useMemo(() => {
+    if (!data || !data.rolling) return [];
+    let minDate = data.meta.date_range.start;
+    let maxDate = selectedDate || data.meta.date_range.end;
+    if (dateRange === 'Custom' && customDateStart && customDateEnd) {
+      minDate = customDateStart;
+      maxDate = customDateEnd;
+    } else if (dateRange !== 'All' && selectedDate) {
+      const maxDateObj = new Date(selectedDate);
+      let days = 30;
+      switch (dateRange) {
+        case '1D': days = 1; break;
+        case '5D': days = 5; break;
+        case '1M': days = 30; break;
+        case '3M': days = 90; break;
+        case '6M': days = 180; break;
+        case '1Y': days = 365; break;
+        case '5Y': days = 1825; break;
+        default: days = 30;
+      }
+      minDate = new Date(maxDateObj.getTime() - (days - 1) * 24 * 3600 * 1000).toISOString().split('T')[0];
+    }
+    return data.rolling.filter(r => r.target_date && r.target_date >= minDate && r.target_date <= maxDate);
+  }, [data, dateRange, selectedDate, customDateStart, customDateEnd]);
+
+  const strategySpreadData = useMemo(() => {
+    if (!strategyFilteredData || strategyFilteredData.length === 0) return [];
+    
+    const daByDate: Record<string, Record<number, number>> = {};
+    const wtByDate: Record<string, Record<number, number>> = {};
+    
+    strategyFilteredData.forEach((r: any) => {
+      const d = r.target_date;
+      const p = r.period;
+      if (r.day_ahead_price !== null && r.day_ahead_price !== undefined) {
+        if (!daByDate[d]) daByDate[d] = {};
+        daByDate[d][p] = r.day_ahead_price;
+      }
+      const wtPrice = (r.day_ahead_price || 0) + (r.spread || 0);
+      if (!wtByDate[d]) wtByDate[d] = {};
+      wtByDate[d][p] = wtPrice;
+    });
+    
+    const dates = Object.keys(daByDate).sort((a,b) => a.localeCompare(b));
+    const result = [];
+    
+    for (const d of dates) {
+      if (wtByDate[d]) {
+        const daA = daByDate[d][strategySpreadPointA];
+        const daB = daByDate[d][strategySpreadPointB];
+        const wtA = wtByDate[d][strategySpreadPointA];
+        const wtB = wtByDate[d][strategySpreadPointB];
+        
+        if (daA !== undefined && daB !== undefined && wtA !== undefined && wtB !== undefined) {
+          const daSpread = daB - daA; // 时段B - 时段A
+          const rtSpread = wtB - wtA; // 时段B - 时段A
+          const space = daSpread - rtSpread; // 日前结算价差 - 加权交易均价差
+          result.push({ date: d, daSpread, rtSpread, space });
+        }
+      }
+    }
+    return result;
+  }, [strategyFilteredData, strategySpreadPointA, strategySpreadPointB]);
+
+  const strategyScannerData = useMemo(() => {
+    if (!strategyFilteredData || strategyFilteredData.length === 0) return [];
+    const daByDate: Record<string, Record<number, number>> = {};
+    const wtByDate: Record<string, Record<number, number>> = {};
+    
+    strategyFilteredData.forEach((r: any) => {
+      const d = r.target_date;
+      const p = r.period;
+      if (r.day_ahead_price !== null && r.day_ahead_price !== undefined) {
+        if (!daByDate[d]) daByDate[d] = {};
+        daByDate[d][p] = r.day_ahead_price;
+      }
+      const wtPrice = (r.day_ahead_price || 0) + (r.spread || 0);
+      if (!wtByDate[d]) wtByDate[d] = {};
+      wtByDate[d][p] = wtPrice;
+    });
+    
+    const dates = Object.keys(daByDate);
+    const matrix = [];
+    
+    for (let a = 1; a <= 24; a++) {
+      for (let b = 1; b <= 24; b++) {
+        let totalSpace = 0;
+        let count = 0;
+        for (const d of dates) {
+          if (wtByDate[d]) {
+            const daA = daByDate[d][a];
+            const daB = daByDate[d][b];
+            const wtA = wtByDate[d][a];
+            const wtB = wtByDate[d][b];
+            if (daA !== undefined && daB !== undefined && wtA !== undefined && wtB !== undefined) {
+              const daSpread = daB - daA; // 时段B - 时段A
+              const rtSpread = wtB - wtA; // 时段B - 时段A
+              totalSpace += (daSpread - rtSpread); // 日前结算价差 - 加权交易均价差
+              count++;
+            }
+          }
+        }
+        matrix.push([a - 1, b - 1, count > 0 ? totalSpace / count : 0]);
+      }
+    }
+    return matrix;
+  }, [strategyFilteredData]);
+
+// ===== LOADING / ERROR =====
   if (loading) return (
     <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff' }}>
       <div style={{ textAlign: 'center' }}>
@@ -1369,7 +1575,68 @@ function App() {
           )}
         </div>
 
-        {/* RIGHT SIDEBAR */}
+        
+        {/* ===== PAGE 7: STRATEGY SPREAD ===== */}
+        {page === 'page7' && (
+          <div style={{ display: 'flex', height: '100%', padding: '8px', gap: '12px', boxSizing: 'border-box' }}>
+            
+            {/* LEFT COLUMN: Controls + Heatmap */}
+            <div style={{ width: '50%', height: '100%', display: 'flex', flexDirection: 'column', gap: '8px', background: '#fff', borderRadius: '4px', border: '1px solid #e0e3eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', padding: '12px', boxSizing: 'border-box' }}>
+              <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexShrink: 0, paddingBottom: '8px', borderBottom: '1px solid #f0f3fa' }}>
+                <span style={{ fontWeight: 600, color: '#131722', fontSize: '13px' }}>选择套利时段对：</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ color: '#4b5563', fontSize: '13px' }}>时段A:</span>
+                  <select 
+                    value={strategySpreadPointA}
+                    onChange={e => setStrategySpreadPointA(Number(e.target.value))}
+                    style={{ padding: '4px 8px', border: '1px solid #e0e3eb', borderRadius: '4px', outline: 'none', fontSize: '13px' }}>
+                    {Array.from({length: 24}, (_, i) => i+1).map(h => <option key={h} value={h}>{h}</option>)}
+                  </select>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ color: '#4b5563', fontSize: '13px' }}>时段B:</span>
+                  <select 
+                    value={strategySpreadPointB}
+                    onChange={e => setStrategySpreadPointB(Number(e.target.value))}
+                    style={{ padding: '4px 8px', border: '1px solid #e0e3eb', borderRadius: '4px', outline: 'none', fontSize: '13px' }}>
+                    {Array.from({length: 24}, (_, i) => i+1).map(h => <option key={h} value={h}>{h}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 0 }}>
+                <div style={{ height: '100%', aspectRatio: '1 / 1', maxHeight: '100%' }}>
+                  <ReactECharts 
+                    option={buildStrategyScannerHeatmap()} 
+                    style={{ height: '100%', width: '100%' }} 
+                    notMerge={true} 
+                    onEvents={{
+                      click: (params: any) => {
+                        if (params.seriesType === 'heatmap') {
+                          setStrategySpreadPointA(params.data[0] + 1);
+                          setStrategySpreadPointB(params.data[1] + 1);
+                        }
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* RIGHT COLUMN: Synchronized Trend Line Chart & Bar Chart */}
+            <div style={{ width: '50%', height: '100%', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ flex: 1, background: '#fff', borderRadius: '4px', border: '1px solid #e0e3eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', padding: '12px', minHeight: 0 }}>
+                <ReactECharts onChartReady={(chart) => { chart.group = 'strategyRightGroup'; echarts.connect('strategyRightGroup'); }} option={buildStrategyTrendLineChart()} style={{ height: '100%', width: '100%' }} notMerge={true} />
+              </div>
+              <div style={{ flex: 1, background: '#fff', borderRadius: '4px', border: '1px solid #e0e3eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', padding: '12px', minHeight: 0 }}>
+                <ReactECharts onChartReady={(chart) => { chart.group = 'strategyRightGroup'; echarts.connect('strategyRightGroup'); }} option={buildStrategySpreadBarChart()} style={{ height: '100%', width: '100%' }} notMerge={true} />
+              </div>
+            </div>
+
+          </div>
+        )}
+
+{/* RIGHT SIDEBAR */}
         {isSidebarVisible && (
           <div className="tv-right-sidebar">
           <div className="tv-watchlist-header">
