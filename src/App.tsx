@@ -296,6 +296,10 @@ function App() {
     return data.rolling.filter((r: any) => r.target_date >= minDate && r.target_date <= maxDate);
   }, [data, dateRange, selectedDate, customDateStart, customDateEnd]);
 
+  const rollingDatesCount = useMemo(() => {
+    return new Set(filteredRollingData.map((r: any) => r.target_date)).size;
+  }, [filteredRollingData]);
+
   const xLabels = useMemo(() => {
     return currentData.map((r: any) => {
       if (timeScale === 'hourly') return `${r.date} ${String(r.period).padStart(2, '0')}:00`;
@@ -1001,9 +1005,6 @@ function App() {
   // ===============================
   // Page 6: Rolling Opportunities
   // ===============================
-  const rollingDatesCount = useMemo(() => {
-    return new Set(filteredRollingData.map((r: any) => r.target_date)).size;
-  }, [filteredRollingData]);
 
   const buildRollingHeatmap = () => {
     if (!data || !filteredRollingData || filteredRollingData.length === 0) return {};
@@ -1311,10 +1312,10 @@ function App() {
           {/* ===== PAGE 5: ARBITRAGE ANALYSIS ===== */}
           {page === 'page6' && (
           <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '16px', overflowY: 'auto', padding: '16px' }}>
-            <div style={{ background: '#fff', borderRadius: '4px', border: '1px solid #e0e3eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', padding: '16px', minHeight: Math.max(rollingDatesCount * 25 + 132, 232) + 'px', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+            <div style={{ background: '#fff', borderRadius: '4px', border: '1px solid #e0e3eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', padding: '16px', height: (rollingDatesCount * 25 + 132) + 'px', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
               <ReactECharts 
                 option={buildRollingHeatmap()} 
-                style={{ height: '100%', width: '100%', minHeight: Math.max(rollingDatesCount * 25 + 100, 200) + 'px' }} 
+                style={{ height: (rollingDatesCount * 25 + 100) + 'px', width: '100%' }} 
                 notMerge={false} 
                 onEvents={{
                   click: (params: any) => {
