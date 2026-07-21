@@ -923,6 +923,8 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
     const dates = strategySpreadData.map(d => d.date);
     const da = strategySpreadData.map(d => d.daSpread);
     const rt = strategySpreadData.map(d => d.rtSpread);
+    const intervalStep = dates.length > 15 ? Math.floor(dates.length / 10) : 0;
+
     return {
       title: { text: `价差趋势对比 (时段 ${strategySpreadPointB} - 时段 ${strategySpreadPointA})`, left: 0, top: 0, textStyle: { color: '#131722', fontSize: 13, fontWeight: 600 } },
       tooltip: { 
@@ -930,9 +932,19 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
         axisPointer: { type: 'line', lineStyle: { type: 'dashed', color: '#888', width: 1 } }
       },
       legend: { data: ['日前结算价差', '加权交易均价差'], top: 0, right: 0, textStyle: { fontSize: 12 } },
-      grid: { top: 35, bottom: 25, left: 60, right: 20, containLabel: false },
-      xAxis: { type: 'category', data: dates, boundaryGap: true, axisLabel: { fontSize: 10 } },
-      yAxis: { type: 'value', name: '元/MWh', nameGap: 10, splitLine: { lineStyle: { color: '#f0f3fa' } }, axisLabel: { fontSize: 10, width: 45, overflow: 'truncate' } },
+      grid: { top: 35, bottom: 25, left: 55, right: 20, containLabel: false },
+      xAxis: { 
+        type: 'category', 
+        data: dates, 
+        boundaryGap: true, 
+        axisTick: { alignWithLabel: true },
+        axisLabel: { 
+          fontSize: 10, 
+          interval: intervalStep,
+          formatter: (val: string) => (val && val.length >= 10 ? val.slice(5) : val)
+        } 
+      },
+      yAxis: { type: 'value', name: '元/MWh', nameGap: 10, splitLine: { lineStyle: { color: '#f0f3fa' } }, axisLabel: { fontSize: 10, width: 40 } },
       series: [
         { name: '日前结算价差', type: 'line', data: da, itemStyle: { color: '#2962ff' }, smooth: true, lineStyle: { width: 2 } },
         { name: '加权交易均价差', type: 'line', data: rt, itemStyle: { color: '#e91e63' }, smooth: true, lineStyle: { width: 2 } }
@@ -944,15 +956,27 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
     if (!strategySpreadData || strategySpreadData.length === 0) return {};
     const dates = strategySpreadData.map(d => d.date);
     const spaces = strategySpreadData.map(d => d.space);
+    const intervalStep = dates.length > 15 ? Math.floor(dates.length / 10) : 0;
+
     return {
       title: { text: `套利收益空间 (日前价差 - 加权均价差)`, left: 0, top: 0, textStyle: { color: '#131722', fontSize: 13, fontWeight: 600 } },
       tooltip: { 
         trigger: 'axis', 
         axisPointer: { type: 'line', lineStyle: { type: 'dashed', color: '#888', width: 1 } }
       },
-      grid: { top: 35, bottom: 25, left: 60, right: 20, containLabel: false },
-      xAxis: { type: 'category', data: dates, boundaryGap: true, axisLabel: { fontSize: 10 } },
-      yAxis: { type: 'value', name: '元/MWh', nameGap: 10, splitLine: { lineStyle: { color: '#f0f3fa' } }, axisLabel: { fontSize: 10, width: 45, overflow: 'truncate' } },
+      grid: { top: 35, bottom: 25, left: 55, right: 20, containLabel: false },
+      xAxis: { 
+        type: 'category', 
+        data: dates, 
+        boundaryGap: true, 
+        axisTick: { alignWithLabel: true },
+        axisLabel: { 
+          fontSize: 10, 
+          interval: intervalStep,
+          formatter: (val: string) => (val && val.length >= 10 ? val.slice(5) : val)
+        } 
+      },
+      yAxis: { type: 'value', name: '元/MWh', nameGap: 10, splitLine: { lineStyle: { color: '#f0f3fa' } }, axisLabel: { fontSize: 10, width: 40 } },
       series: [
         { 
           name: '套利空间', 
@@ -966,7 +990,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
     };
   };
 
-const buildArbitrageHeatmap = () => {
+  const buildArbitrageHeatmap = () => {
     const { heatmapData, avgPrices } = getArbitrageData();
     if (!heatmapData.length) return {};
     
