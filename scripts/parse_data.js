@@ -266,7 +266,7 @@ function parseRolling(prices) {
             
             let weightedPrice = parseFloat(row['加权价格']) || 0;
             let dayaheadPrice = pricesMap[`${targetDateStr}_${period}`] || 0;
-            let spread = dayaheadPrice - weightedPrice;
+            let spread = weightedPrice - dayaheadPrice;
             
             records.push({
                 target_date: targetDateStr,
