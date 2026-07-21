@@ -1263,8 +1263,8 @@ function App() {
           )}
           {/* ===== PAGE 5: ARBITRAGE ANALYSIS ===== */}
           {page === 'page6' && (
-          <div className="flex flex-col h-full gap-4">
-            <div className="bg-white rounded border border-gray-200 shadow-sm p-4 h-[800px] flex flex-col">
+          <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '16px', overflowY: 'auto', padding: '16px' }}>
+            <div style={{ background: '#fff', borderRadius: '4px', border: '1px solid #e0e3eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', padding: '16px', minHeight: '800px', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
               <ReactECharts 
                 option={buildRollingHeatmap()} 
                 style={{ height: '100%', width: '100%', minHeight: '700px' }} 
@@ -1277,14 +1277,14 @@ function App() {
                   }
                 }}
               />
-              <div className="text-xs text-gray-400 text-center mt-2">提示: 点击热力图中的色块，即可在下方查看对应时段的深度剖析</div>
+              <div style={{ fontSize: '12px', color: '#9ca3af', textAlign: 'center', marginTop: '8px' }}>提示: 点击热力图中的色块，即可在下方查看对应时段的深度剖析</div>
             </div>
             
-            <div className="flex gap-4 h-[600px]">
-              <div className="bg-white rounded border border-gray-200 shadow-sm p-4 flex-1">
+            <div style={{ display: 'flex', gap: '16px', height: '600px', flexShrink: 0 }}>
+              <div style={{ background: '#fff', borderRadius: '4px', border: '1px solid #e0e3eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', padding: '16px', flex: 1 }}>
                 <ReactECharts option={buildRollingVolatilityChart()} style={{ height: '100%', width: '100%', minHeight: '500px' }} notMerge={true} />
               </div>
-              <div className="bg-white rounded border border-gray-200 shadow-sm p-4 w-1/3">
+              <div style={{ background: '#fff', borderRadius: '4px', border: '1px solid #e0e3eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', padding: '16px', width: '33.333%' }}>
                 <ReactECharts option={buildRollingScatterChart()} style={{ height: '100%', width: '100%', minHeight: '500px' }} notMerge={true} />
               </div>
             </div>
