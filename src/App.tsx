@@ -1007,10 +1007,11 @@ function App() {
         top: 'center',
         inRange: { color: ['#ef5350', '#ffffff', '#26a69a'] }
       },
+      animation: false,
       series: [{
         type: 'heatmap',
         data: heatData,
-        label: { show: true, fontSize: 10, color: '#333', formatter: (p: any) => p.data[2].toFixed(2) },
+        label: { show: true, fontSize: 10, formatter: (p: any) => p.data[2].toFixed(2) },
         itemStyle: { borderWidth: 1, borderColor: '#f3f4f6' },
         emphasis: { disabled: true }
       }]
@@ -1267,7 +1268,7 @@ function App() {
               <ReactECharts 
                 option={buildRollingHeatmap()} 
                 style={{ height: '100%', width: '100%', minHeight: '500px' }} 
-                notMerge={true} 
+                notMerge={false} 
                 onEvents={{
                   click: (params: any) => {
                     if (params.componentType === 'series') {
