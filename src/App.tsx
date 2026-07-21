@@ -994,24 +994,24 @@ function App() {
         position: 'top',
         formatter: (p: any) => `标的日期: ${dates[p.data[1]]}<br/>时段: ${periods[p.data[0]]}:00<br/>交易机会价差: <b>${p.data[2].toFixed(2)}</b> 元/MWh`
       },
-      grid: { top: 60, bottom: 40, left: 80, right: 20 },
+      grid: { top: 40, bottom: 40, left: 80, right: 80 },
       xAxis: { type: 'category', data: periods.map(p => `${p}:00`), splitArea: { show: true } },
-      yAxis: { type: 'category', data: dates, splitArea: { show: true } },
+      yAxis: { type: 'category', data: dates, splitArea: { show: true }, inverse: true },
       visualMap: {
         min: -maxAbs,
         max: maxAbs,
         calculable: true,
-        orient: 'horizontal',
-        left: 'center',
-        top: 25,
+        orient: 'vertical',
+        right: 0,
+        top: 'center',
         inRange: { color: ['#ef5350', '#ffffff', '#26a69a'] }
       },
       series: [{
         type: 'heatmap',
         data: heatData,
-        label: { show: true, fontSize: 10, formatter: (p: any) => p.data[2] > 0 ? p.data[2].toFixed(0) : p.data[2].toFixed(0) },
+        label: { show: true, fontSize: 10, color: '#333', formatter: (p: any) => p.data[2].toFixed(0) },
         itemStyle: { borderWidth: 1, borderColor: '#f3f4f6' },
-        emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0, 0, 0, 0.5)', borderColor: '#333', borderWidth: 2 } }
+        emphasis: { itemStyle: { borderColor: '#333', borderWidth: 2 } }
       }]
     };
   };
