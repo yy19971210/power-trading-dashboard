@@ -278,7 +278,7 @@ function App() {
     if (data && data.daily.length > 0) {
       let latestOpDate = data.daily[data.daily.length - 1].date;
       for (let i = data.daily.length - 1; i >= 0; i--) {
-        if (data.daily[i].load != null) {
+        if (data.daily[i].load != null || data.daily[i].price_dayahead != null) {
           latestOpDate = data.daily[i].date;
           break;
         }
@@ -963,13 +963,47 @@ function App() {
   ];
 
 
+  const filteredRollingData = useMemo(() => {
+    if (!data || !data.rolling || data.rolling.length === 0) return [];
+    
+    let minDate = data.meta.date_range.start;
+    let maxDate = selectedDate || data.meta.date_range.end;
+    
+    if (dateRange === 'Custom' && customDateStart && customDateEnd) {
+      minDate = customDateStart;
+      maxDate = customDateEnd;
+    } else if (dateRange !== 'All' && selectedDate) {
+      const maxDateObj = new Date(selectedDate);
+      let days = 30;
+      switch (dateRange) {
+        case '1D': days = 1; break;
+        case '5D': days = 5; break;
+        case '1M': days = 30; break;
+        case '3M': days = 90; break;
+        case '6M': days = 180; break;
+        case '1Y': days = 365; break;
+        case '5Y': days = 1825; break;
+        case 'YTD': 
+          minDate = `${maxDateObj.getFullYear()}-01-01`;
+          days = -1;
+          break;
+        default: days = 30;
+      }
+      if (days > 0) {
+        minDate = new Date(maxDateObj.getTime() - (days - 1) * 24 * 3600 * 1000).toISOString().split('T')[0];
+      }
+    }
+    
+    return data.rolling.filter((r: any) => r.target_date >= minDate && r.target_date <= maxDate);
+  }, [data, dateRange, selectedDate, customDateStart, customDateEnd]);
+
   // ===============================
   // Page 6: Rolling Opportunities
   // ===============================
   const buildRollingHeatmap = () => {
-    if (!data || !data.rolling || data.rolling.length === 0) return {};
+    if (!data || !filteredRollingData || filteredRollingData.length === 0) return {};
     
-    const dates = Array.from(new Set(data.rolling.map((r: any) => r.target_date))).sort();
+    const dates = Array.from(new Set(filteredRollingData.map((r: any) => r.target_date))).sort();
     const periods = Array.from({length: 24}, (_, i) => i + 1);
     
     const heatData = [];
@@ -977,7 +1011,7 @@ function App() {
     const spreads: number[] = [];
     for(let d=0; d<dates.length; d++) {
         for(let p=0; p<periods.length; p++) {
-            const r = data.rolling.find((x: any) => x.target_date === dates[d] && x.period === periods[p]);
+            const r = filteredRollingData.find((x: any) => x.target_date === dates[d] && x.period === periods[p]);
             if(r) {
                 heatData.push([p, d, r.spread]);
                 spreads.push(Math.abs(r.spread));
@@ -1019,8 +1053,8 @@ function App() {
   };
 
   const buildRollingVolatilityChart = () => {
-    if (!data || !data.rolling || data.rolling.length === 0) return {};
-    const filtered = data.rolling.filter((r: any) => r.period === selectedRollingPeriod).sort((a: any, b: any) => a.target_date.localeCompare(b.target_date));
+    if (!data || !filteredRollingData || filteredRollingData.length === 0) return {};
+    const filtered = filteredRollingData.filter((r: any) => r.period === selectedRollingPeriod).sort((a: any, b: any) => a.target_date.localeCompare(b.target_date));
     if(!filtered.length) return {};
     
     return {
@@ -1089,7 +1123,7 @@ function App() {
   };
 
   const buildRollingScatterChart = () => {
-    if (!data || !data.rolling || data.rolling.length === 0) return {};
+    if (!data || !filteredRollingData || filteredRollingData.length === 0) return {};
     return {
       title: { text: '全时段 成交量 vs 价差分布', left: 8, top: 4, textStyle: { fontSize: 12 } },
       tooltip: { 
@@ -1099,11 +1133,19 @@ function App() {
       grid: { left: 50, right: 30, top: 40, bottom: 40 },
       xAxis: { type: 'value', name: '成交量(MWh)', nameLocation: 'middle', nameGap: 25, splitLine: { show: false } },
       yAxis: { type: 'value', name: '价差(元/MWh)', splitLine: { show: true, lineStyle: { type: 'dashed', color: '#f0f0f0' } } },
+      visualMap: {
+        show: false,
+        dimension: 1,
+        pieces: [
+          { min: 0, color: '#f23645' },
+          { max: 0, color: '#089981' }
+        ]
+      },
       series: [{
         type: 'scatter',
         symbolSize: 5,
-        itemStyle: { color: '#00897B', opacity: 0.6 },
-        data: data.rolling.map((r: any) => [r.volume, r.spread, r.target_date, r.period])
+        itemStyle: { opacity: 0.6 },
+        data: filteredRollingData.map((r: any) => [r.volume, r.spread, r.target_date, r.period])
       }]
     };
   };
