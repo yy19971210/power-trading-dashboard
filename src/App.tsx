@@ -53,7 +53,7 @@ const PAGE_BTNS: { key: PageId; label: string }[] = [
   { key: 'page2', label: '气象相关性' },
   { key: 'page3', label: '竞价空间' },
   { key: 'page4', label: '现货价格对比' },
-  { key: 'page5', label: '价差套利分析' },
+  { key: 'page5', label: '日前结算价差' },
 ];
 
 // ===============================
@@ -94,6 +94,7 @@ function App() {
   // Page 5 specific state
   const [selectedArbitragePair, setSelectedArbitragePair] = useState<[number, number]>([4, 19]);
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
+  const [weatherMetric, setWeatherMetric] = useState<'wind'|'solar'|'load'|'hydro'>('wind');
   const [page, setPage] = useState<PageId>('page1');
   const [activeView, setActiveView] = useState<'overview' | 'detail'>('overview');
   
@@ -466,49 +467,11 @@ function App() {
 
   // -- Page 2: Scatter + Regression --
   const buildScatterChart = (xKey: string, yKey: string, xLabel: string, yLabel: string, color: string) => {
-    let raw = data ? data[timeScale] || [] : [];
-    
-    let maxDateStr = data?.meta.date_range.end || '';
-    for (let i = raw.length - 1; i >= 0; i--) {
-       if (raw[i][xKey] != null && raw[i][yKey] != null) {
-          maxDateStr = raw[i].date || raw[i].date_str || raw[i].week || raw[i].month || maxDateStr;
-          break;
-       }
-    }
-    const maxDate = dayjs(maxDateStr);
-    let minDate = maxDate;
-
-    if (dateRange !== 'All') {
-      let days = 30;
-      switch (dateRange) {
-        case '1D': days = 1; break;
-        case '5D': days = 5; break;
-        case '1M': days = 30; break;
-        case '3M': days = 90; break;
-        case '6M': days = 180; break;
-        case '1Y': days = 365; break;
-        case '5Y': days = 1825; break;
-      }
-      minDate = maxDate.subtract(days, 'day');
-    }
-
+    const raw = currentData;
     const pairs: [number, number, string][] = [];
     raw.forEach((r: any) => {
       const x = r[xKey], y = r[yKey];
-      
-      let dStr = r.date || r.date_str;
-      if (!dStr) {
-         if (r.week) dStr = r.week.substring(0,4) + '-01-01';
-         else if (r.month) dStr = r.month + '-01';
-      }
-      
-      let inRange = true;
-      if (dateRange !== 'All' && dStr) {
-         const d = dayjs(dStr);
-         inRange = (d.isAfter(minDate) || d.isSame(minDate, 'day')) && (d.isBefore(maxDate) || d.isSame(maxDate, 'day'));
-      }
-
-      if (inRange && x != null && y != null && isFinite(x) && isFinite(y)) {
+      if (x != null && y != null && isFinite(x) && isFinite(y)) {
          let dateLabel = r.date || r.date_str || r.week || r.month || '';
          if (timeScale === 'hourly') dateLabel = `${r.date} ${String(r.period).padStart(2, '0')}:00`;
          pairs.push([x, y, dateLabel]);
@@ -559,6 +522,36 @@ function App() {
         { type: 'line', data: regLine, symbol: 'none',
           lineStyle: { color, width: 2, type: 'dashed' },
           tooltip: { show: false } }
+      ]
+    };
+  };
+
+  const buildWeatherTimeSeriesChart = (weatherKey: string, outputKey: string, weatherLabel: string, outputLabel: string, color: string) => {
+    let raw = currentData;
+    const xData: string[] = [];
+    const weatherData: (number | null)[] = [];
+    const outputData: (number | null)[] = [];
+    
+    raw.forEach((r: any) => {
+      let dateLabel = r.date || r.date_str || r.week || r.month || '';
+      if (timeScale === 'hourly') dateLabel = `${r.date} ${String(r.period).padStart(2, '0')}:00`;
+      xData.push(dateLabel);
+      weatherData.push(r[weatherKey] != null ? r[weatherKey] : null);
+      outputData.push(r[outputKey] != null ? r[outputKey] : null);
+    });
+
+    return {
+      tooltip: { trigger: 'axis', backgroundColor: '#fff', borderColor: '#e0e3eb', textStyle: { color: '#131722', fontSize: 12 } },
+      legend: { data: [weatherLabel, outputLabel], top: 4, textStyle: { fontSize: 11, color: '#787b86' } },
+      grid: { left: 45, right: 45, top: 30, bottom: 20 },
+      xAxis: { type: 'category', data: xData, axisLabel: { fontSize: 9, color: '#787b86' }, axisLine: { lineStyle: { color: '#e0e3eb' } } },
+      yAxis: [
+        { type: 'value', name: outputLabel, nameTextStyle: { fontSize: 9, color: '#787b86' }, axisLabel: { fontSize: 9, color: '#787b86' }, splitLine: { show: false } },
+        { type: 'value', name: weatherLabel, nameTextStyle: { fontSize: 9, color: '#787b86' }, axisLabel: { fontSize: 9, color: '#787b86' }, splitLine: { show: false } }
+      ],
+      series: [
+        { name: outputLabel, type: 'line', data: outputData, yAxisIndex: 0, itemStyle: { color: color }, symbol: 'none', lineStyle: { width: 1.5 } },
+        { name: weatherLabel, type: 'line', data: weatherData, yAxisIndex: 1, itemStyle: { color: '#787b86' }, symbol: 'none', lineStyle: { width: 1.5, type: 'dashed' } }
       ]
     };
   };
@@ -638,7 +631,11 @@ function App() {
     
     // Determine the date range based on global selector
     let minDate = data.meta.date_range.start;
-    if (dateRange !== 'All' && selectedDate) {
+    let maxDate = selectedDate || data.meta.date_range.end;
+    if (dateRange === 'Custom' && customDateStart && customDateEnd) {
+      minDate = customDateStart;
+      maxDate = customDateEnd;
+    } else if (dateRange !== 'All' && selectedDate) {
       const maxDateObj = new Date(selectedDate);
       let days = 30;
       switch (dateRange) {
@@ -656,7 +653,7 @@ function App() {
     
     const grouped: Record<string, (number | null)[]> = {};
     data.hourly.forEach(r => {
-      if (r.date && r.date >= minDate && r.date <= (selectedDate || data.meta.date_range.end)) {
+      if (r.date && r.date >= minDate && r.date <= maxDate) {
         if (!grouped[r.date]) grouped[r.date] = new Array(24).fill(null);
         if (r.period != null && r.period >= 1 && r.period <= 24) {
           grouped[r.date][r.period - 1] = r.price_dayahead;
@@ -744,7 +741,11 @@ function App() {
     if (!data || !data.hourly) return { heatmapData: [], trendData: [], histData: [], avgPrices: {} };
     
     let minDate = data.meta.date_range.start;
-    if (dateRange !== 'All' && selectedDate) {
+    let maxDate = selectedDate || data.meta.date_range.end;
+    if (dateRange === 'Custom' && customDateStart && customDateEnd) {
+      minDate = customDateStart;
+      maxDate = customDateEnd;
+    } else if (dateRange !== 'All' && selectedDate) {
       const maxDateObj = new Date(selectedDate);
       let days = 30;
       switch (dateRange) {
@@ -760,7 +761,7 @@ function App() {
       minDate = new Date(maxDateObj.getTime() - (days - 1) * 24 * 3600 * 1000).toISOString().split('T')[0];
     }
 
-    const filtered = data.hourly.filter(r => r.date && r.date >= minDate && r.date <= (selectedDate || data.meta.date_range.end));
+    const filtered = data.hourly.filter(r => r.date && r.date >= minDate && r.date <= maxDate);
     
     // 1. Avg Prices for Heatmap
     const periodPrices: Record<number, number[]> = {};
@@ -843,7 +844,7 @@ function App() {
     const maxAbs = Math.max(Math.abs(maxVal), Math.abs(minVal));
 
     return {
-      title: { text: '24时段均价差热力图 (买入 vs 卖出)', left: 8, top: 0, textStyle: { color: '#131722', fontSize: 14 } },
+      title: { text: '统一结算点日前价格(结算) 24时段套利均价差热力图', left: 8, top: 0, textStyle: { color: '#131722', fontSize: 14 } },
       tooltip: {
         position: 'top',
         formatter: (p: any) => {
@@ -878,7 +879,7 @@ function App() {
     const { trendData } = getArbitrageData();
     if (!trendData.length) return {};
     return {
-      title: { text: `选中组合 (${selectedArbitragePair[0]}:00 买入, ${selectedArbitragePair[1]}:00 卖出) 每日价差`, left: 8, top: 4, textStyle: { fontSize: 12 } },
+      title: { text: `选中组合 (${selectedArbitragePair[0]}:00 买入, ${selectedArbitragePair[1]}:00 卖出) 每日结算价差`, left: 8, top: 4, textStyle: { fontSize: 12 } },
       tooltip: { trigger: 'axis', formatter: (p: any) => `${p[0].name}<br/>价差: <b>${p[0].value.toFixed(2)}</b> 元` },
       grid: { left: 40, right: 20, top: 30, bottom: 20 },
       xAxis: { type: 'category', data: trendData.map((d: any) => d.date) },
@@ -897,7 +898,7 @@ function App() {
     const { histData } = getArbitrageData();
     if (!histData.length) return {};
     return {
-      title: { text: '价差概率分布', left: 8, top: 4, textStyle: { fontSize: 12 } },
+      title: { text: '结算价差概率分布', left: 8, top: 4, textStyle: { fontSize: 12 } },
       tooltip: { 
         trigger: 'axis', 
         formatter: (params: any) => {
@@ -1053,23 +1054,45 @@ function App() {
 
           {/* ===== PAGE 2: SCATTER / CORRELATION ===== */}
           {page === 'page2' && (
-            <>
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '4px' }}>
+              <div style={{ display: 'flex', borderBottom: '1px solid #e0e3eb', marginBottom: '4px' }}>
+                {[
+                  { id: 'wind', label: '风电 vs 风速' },
+                  { id: 'solar', label: '光伏 vs 辐射' },
+                  { id: 'load', label: '负荷 vs 温度' },
+                  { id: 'hydro', label: '水电 vs 降水' },
+                ].map(item => (
+                  <button 
+                    key={item.id}
+                    style={{
+                      padding: '6px 16px', background: 'transparent', border: 'none',
+                      borderBottom: weatherMetric === item.id ? '2px solid #2962ff' : '2px solid transparent',
+                      color: weatherMetric === item.id ? '#2962ff' : '#787b86',
+                      fontWeight: weatherMetric === item.id ? 600 : 400,
+                      cursor: 'pointer', fontSize: '13px'
+                    }}
+                    onClick={() => setWeatherMetric(item.id as any)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr', height: '100%', gap: 0, paddingTop: 4 }}>
-                <div style={{ borderRight: '1px solid #e0e3eb', borderBottom: '1px solid #e0e3eb' }}>
-                  <ReactECharts option={buildScatterChart('wind_speed', 'wind', '风速 (m/s)', '风电出力 (MW)', '#089981')} style={{ height: '100%' }} notMerge />
+              <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+                <div style={{ width: '60%', borderRight: '1px solid #e0e3eb', height: '100%' }}>
+                  {weatherMetric === 'wind' && <ReactECharts option={buildWeatherTimeSeriesChart('wind_speed', 'wind', '风速', '风电出力', '#089981')} style={{ height: '100%' }} notMerge />}
+                  {weatherMetric === 'solar' && <ReactECharts option={buildWeatherTimeSeriesChart('solar_radiation', 'solar', '辐射', '光伏出力', '#f59e0b')} style={{ height: '100%' }} notMerge />}
+                  {weatherMetric === 'load' && <ReactECharts option={buildWeatherTimeSeriesChart('temperature', 'load', '温度', '系统负荷', '#f23645')} style={{ height: '100%' }} notMerge />}
+                  {weatherMetric === 'hydro' && <ReactECharts option={buildWeatherTimeSeriesChart('rainfall', 'hydro', '降水', '水电出力', '#2962ff')} style={{ height: '100%' }} notMerge />}
                 </div>
-                <div style={{ borderBottom: '1px solid #e0e3eb' }}>
-                  <ReactECharts option={buildScatterChart('solar_radiation', 'solar', '地表短波辐射 (W/m²)', '光伏出力 (MW)', '#f59e0b')} style={{ height: '100%' }} notMerge />
-                </div>
-                <div style={{ borderRight: '1px solid #e0e3eb' }}>
-                  <ReactECharts option={buildScatterChart('temperature', 'load', '温度 (°C)', '系统负荷 (MW)', '#f23645')} style={{ height: '100%' }} notMerge />
-                </div>
-                <div>
-                  <ReactECharts option={buildScatterChart('rainfall', 'hydro', '地表总降水 (mm)', '水电出力 (MW)', '#2962ff')} style={{ height: '100%' }} notMerge />
+                <div style={{ width: '40%', height: '100%' }}>
+                  {weatherMetric === 'wind' && <ReactECharts option={buildScatterChart('wind_speed', 'wind', '风速 (m/s)', '风电出力 (MW)', '#089981')} style={{ height: '100%' }} notMerge />}
+                  {weatherMetric === 'solar' && <ReactECharts option={buildScatterChart('solar_radiation', 'solar', '短波辐射 (W/m²)', '光伏出力 (MW)', '#f59e0b')} style={{ height: '100%' }} notMerge />}
+                  {weatherMetric === 'load' && <ReactECharts option={buildScatterChart('temperature', 'load', '温度 (°C)', '系统负荷 (MW)', '#f23645')} style={{ height: '100%' }} notMerge />}
+                  {weatherMetric === 'hydro' && <ReactECharts option={buildScatterChart('rainfall', 'hydro', '降水 (mm)', '水电出力 (MW)', '#2962ff')} style={{ height: '100%' }} notMerge />}
                 </div>
               </div>
-            </>
+            </div>
           )}
 
           {/* ===== PAGE 3: BIDDING SPACE ===== */}
