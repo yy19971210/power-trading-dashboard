@@ -1029,7 +1029,7 @@ function App() {
     if (maxAbs < 10) maxAbs = 10; // ensure a minimum gradient
     
     return {
-      title: { text: '日滚动交易机会(D+2) 价差热力图', subtext: '提示: 负数代表买入，正数代表卖出', left: 8, top: 0, textStyle: { color: '#131722', fontSize: 14 } },
+      title: { text: '日滚动交易机会(D+2) 价差热力图', left: 8, top: 0, textStyle: { color: '#131722', fontSize: 14 } },
       tooltip: {
         position: 'top',
         formatter: (p: any) => `标的日期: ${dates[p.data[1]]}<br/>时段: ${periods[p.data[0]]}:00<br/>交易机会价差: <b>${p.data[2].toFixed(2)}</b> 元/MWh`
