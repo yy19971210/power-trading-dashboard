@@ -50,8 +50,8 @@ export const DashboardTab: React.FC = () => {
     visualMap: {
       show: false,
       pieces: [
-        { gt: 0, color: '#089981' },
-        { lte: 0, color: '#f23645' }
+        { gt: 0, color: '#f23645' },
+        { lte: 0, color: '#089981' }
       ]
     },
     series: [{ name: '缺口', type: 'bar', data: gapData }]

@@ -65,7 +65,7 @@ const fmtPct = (n: number | null | undefined) => {
   if (n == null) return '—';
   return `${n >= 0 ? '+' : ''}${n.toFixed(1)}%`;
 };
-const pctColor = (n: number | null | undefined) => n == null ? '#787b86' : n >= 0 ? '#089981' : '#f23645';
+const pctColor = (n: number | null | undefined) => n == null ? '#787b86' : n >= 0 ? '#f23645' : '#089981';
 
 // Simple linear regression
 function linearRegression(data: [number, number, any?][]): { slope: number; intercept: number; r2: number } {
@@ -1005,7 +1005,7 @@ function App() {
         orient: 'vertical',
         right: 0,
         top: 'center',
-        inRange: { color: ['#ef5350', '#ffffff', '#26a69a'] }
+        inRange: { color: ['#089981', '#ffffff', '#f23645'] }
       },
       animation: false,
       series: [{

@@ -20,9 +20,9 @@ export const HistoryTab: React.FC = () => {
     xAxis: { type: 'category', data: ['01-01', '01-02', '01-03', '01-04', '01-05', '01-06', '01-07'], ...commonAxisProps },
     yAxis: { type: 'value', name: '元/MWh', ...commonAxisProps, nameTextStyle: { color: '#787b86' } },
     series: [
-      { name: '最高价格', type: 'line', data: [450, 480, 520, 600, 580, 490, 470], itemStyle: { color: '#089981' } },
+      { name: '最高价格', type: 'line', data: [450, 480, 520, 600, 580, 490, 470], itemStyle: { color: '#f23645' } },
       { name: '平均价格', type: 'line', data: [320, 310, 350, 400, 390, 330, 310], itemStyle: { color: '#2962ff' }, smooth: true, lineStyle: { width: 2 } },
-      { name: '最低价格', type: 'line', data: [150, 120, 180, 200, 190, 160, 140], itemStyle: { color: '#f23645' } }
+      { name: '最低价格', type: 'line', data: [150, 120, 180, 200, 190, 160, 140], itemStyle: { color: '#089981' } }
     ]
   };
 
@@ -49,7 +49,7 @@ export const HistoryTab: React.FC = () => {
     yAxis: { type: 'category', data: days, splitArea: { show: true }, ...commonAxisProps },
     visualMap: {
       min: -1, max: 1, calculable: true, orient: 'horizontal', left: 'center', bottom: '0%',
-      inRange: { color: ['#f23645', '#f8f9fd', '#089981'] },
+      inRange: { color: ['#089981', '#f8f9fd', '#f23645'] },
       textStyle: { color: '#787b86' }
     },
     series: [{
