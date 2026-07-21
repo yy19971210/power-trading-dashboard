@@ -896,8 +896,8 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
         }
       },
       grid: { height: '80%', top: 35, right: 45, left: 35, bottom: 35 },
-      xAxis: { type: 'category', data: periods, name: '时段A', splitArea: { show: true }, axisLabel: { fontSize: 10 } },
-      yAxis: { type: 'category', data: periods, name: '时段B', splitArea: { show: true }, axisLabel: { fontSize: 10 } },
+      xAxis: { type: 'category', data: periods, name: '时段A', splitArea: { show: true }, axisLabel: { fontSize: 10, interval: 0 } },
+      yAxis: { type: 'category', data: periods, name: '时段B', splitArea: { show: true }, axisLabel: { fontSize: 10, interval: 0 } },
       visualMap: {
         min: -maxAbs,
         max: maxAbs,
@@ -1034,7 +1034,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
     const { heatmapData, avgPrices } = getArbitrageData();
     if (!heatmapData.length) return {};
     
-    const hours = Array.from({length: 24}, (_, i) => `${String(i + 1).padStart(2, '0')}:00`);
+    const hours = Array.from({length: 24}, (_, i) => String(i + 1));
     
     const values = heatmapData.map(d => d[2]);
     const maxVal = Math.max(...values);
@@ -1053,8 +1053,8 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
         }
       },
       grid: { height: '80%', top: 30, right: 60, left: 60 },
-      xAxis: { type: 'category', data: hours, name: '买入时段', splitArea: { show: true }, axisLabel: { fontSize: 10 } },
-      yAxis: { type: 'category', data: hours, name: '卖出时段', splitArea: { show: true }, axisLabel: { fontSize: 10 } },
+      xAxis: { type: 'category', data: hours, name: '买入时段', splitArea: { show: true }, axisLabel: { fontSize: 10, interval: 0 } },
+      yAxis: { type: 'category', data: hours, name: '卖出时段', splitArea: { show: true }, axisLabel: { fontSize: 10, interval: 0 } },
       visualMap: {
         min: -maxAbs,
         max: maxAbs,
