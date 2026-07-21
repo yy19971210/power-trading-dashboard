@@ -974,15 +974,19 @@ function App() {
     
     const heatData = [];
     let maxAbs = 0;
+    const spreads: number[] = [];
     for(let d=0; d<dates.length; d++) {
         for(let p=0; p<periods.length; p++) {
             const r = data.rolling.find((x: any) => x.target_date === dates[d] && x.period === periods[p]);
             if(r) {
                 heatData.push([p, d, r.spread]);
-                if(Math.abs(r.spread) > maxAbs) maxAbs = Math.abs(r.spread);
+                spreads.push(Math.abs(r.spread));
             }
         }
     }
+    spreads.sort((a, b) => a - b);
+    maxAbs = spreads.length > 0 ? spreads[Math.floor(spreads.length * 0.9)] : 50;
+    if (maxAbs < 10) maxAbs = 10; // ensure a minimum gradient
     
     return {
       title: { text: '日滚动交易机会(D+2) 价差热力图', left: 8, top: 0, textStyle: { color: '#131722', fontSize: 14 } },
@@ -1005,8 +1009,9 @@ function App() {
       series: [{
         type: 'heatmap',
         data: heatData,
-        label: { show: false },
-        emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0, 0, 0, 0.5)' } }
+        label: { show: true, fontSize: 10, formatter: (p: any) => p.data[2] > 0 ? p.data[2].toFixed(0) : p.data[2].toFixed(0) },
+        itemStyle: { borderWidth: 1, borderColor: '#f3f4f6' },
+        emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0, 0, 0, 0.5)', borderColor: '#333', borderWidth: 2 } }
       }]
     };
   };
@@ -1260,7 +1265,7 @@ function App() {
             <div className="bg-white rounded border border-gray-200 shadow-sm p-4 h-[400px] flex flex-col">
               <ReactECharts 
                 option={buildRollingHeatmap()} 
-                style={{ height: '100%', width: '100%' }} 
+                style={{ height: '100%', width: '100%', minHeight: '300px' }} 
                 notMerge={true} 
                 onEvents={{
                   click: (params: any) => {
