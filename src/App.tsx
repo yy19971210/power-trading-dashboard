@@ -989,7 +989,7 @@ function App() {
     if (maxAbs < 10) maxAbs = 10; // ensure a minimum gradient
     
     return {
-      title: { text: '日滚动交易机会(D+2) 价差热力图', left: 8, top: 0, textStyle: { color: '#131722', fontSize: 14 } },
+      title: { text: '日滚动交易机会(D+2) 价差热力图', subtext: '提示: 负数代表买入，正数代表卖出', left: 8, top: 0, textStyle: { color: '#131722', fontSize: 14 } },
       tooltip: {
         position: 'top',
         formatter: (p: any) => `标的日期: ${dates[p.data[1]]}<br/>时段: ${periods[p.data[0]]}:00<br/>交易机会价差: <b>${p.data[2].toFixed(2)}</b> 元/MWh`
@@ -1000,6 +1000,7 @@ function App() {
       visualMap: {
         min: -maxAbs,
         max: maxAbs,
+        text: ['卖出', '买入'],
         calculable: true,
         orient: 'vertical',
         right: 0,
@@ -1009,9 +1010,9 @@ function App() {
       series: [{
         type: 'heatmap',
         data: heatData,
-        label: { show: true, fontSize: 10, color: '#333', formatter: (p: any) => p.data[2].toFixed(0) },
+        label: { show: true, fontSize: 10, color: '#333', formatter: (p: any) => p.data[2].toFixed(2) },
         itemStyle: { borderWidth: 1, borderColor: '#f3f4f6' },
-        emphasis: { itemStyle: { borderColor: '#333', borderWidth: 2 } }
+        emphasis: { disabled: true }
       }]
     };
   };
@@ -1262,10 +1263,10 @@ function App() {
           {/* ===== PAGE 5: ARBITRAGE ANALYSIS ===== */}
           {page === 'page6' && (
           <div className="flex flex-col h-full gap-4">
-            <div className="bg-white rounded border border-gray-200 shadow-sm p-4 h-[400px] flex flex-col">
+            <div className="bg-white rounded border border-gray-200 shadow-sm p-4 h-[600px] flex flex-col">
               <ReactECharts 
                 option={buildRollingHeatmap()} 
-                style={{ height: '100%', width: '100%', minHeight: '300px' }} 
+                style={{ height: '100%', width: '100%', minHeight: '500px' }} 
                 notMerge={true} 
                 onEvents={{
                   click: (params: any) => {
