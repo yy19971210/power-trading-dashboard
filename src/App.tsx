@@ -1305,7 +1305,12 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
         formatter: (p: any) => `标的日期: ${dates[p.data[1]]}<br/>时段: ${periods[p.data[0]]}:00<br/>交易机会价差: <b>${p.data[2].toFixed(2)}</b> 元/MWh`
       },
       grid: { top: 40, height: dates.length * 25, left: 80, right: 80 },
-      xAxis: { type: 'category', data: periods.map(p => `${p}:00`), splitArea: { show: true } },
+      xAxis: {
+        type: 'category',
+        data: periods.map(p => String(p)),
+        splitArea: { show: true },
+        axisLabel: { interval: 0 }
+      },
       yAxis: { type: 'category', data: dates, splitArea: { show: true }, inverse: true },
       visualMap: {
         min: -maxAbs,
