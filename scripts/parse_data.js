@@ -14,7 +14,7 @@ const OUT_FILE = path.join(DATA_ROOT, "power-trading-dashboard", "public", "data
 function getFiles(dir, pattern) {
     if (!fs.existsSync(dir)) return [];
     const files = fs.readdirSync(dir);
-    return files.filter(f => f.endsWith(pattern)).map(f => path.join(dir, f));
+    return files.filter(f => f.endsWith(pattern) && !f.startsWith('~$')).map(f => path.join(dir, f));
 }
 
 // 1. Operations
