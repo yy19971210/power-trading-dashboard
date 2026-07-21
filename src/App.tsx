@@ -93,6 +93,7 @@ function App() {
   
   // Page 5 specific state
   const [selectedArbitragePair, setSelectedArbitragePair] = useState<[number, number]>([4, 19]);
+  const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   const [weatherMetric, setWeatherMetric] = useState<'wind'|'solar'|'load'|'hydro'>('wind');
   const [page, setPage] = useState<PageId>('page1');
