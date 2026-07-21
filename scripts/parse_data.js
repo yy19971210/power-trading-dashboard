@@ -274,7 +274,8 @@ function parseRolling(prices) {
                 volume: parseFloat(row['总成交量(日均)']) || 0,
                 max_price: parseFloat(row['最高价']) || 0,
                 min_price: parseFloat(row['最低价']) || 0,
-                spread: spread
+                spread: spread,
+                day_ahead_price: dayaheadPrice
             });
         }
     }
