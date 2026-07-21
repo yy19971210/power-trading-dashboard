@@ -227,7 +227,14 @@ function buildRecords(arr, timeKey) {
 }
 
 // 4. Rolling (市场概况)
-function parseRolling() {
+function parseRolling(prices) {
+    const pricesMap = {};
+    if (prices) {
+        for (let p of prices) {
+            pricesMap[`${p.date}_${p.period}`] = p.dayahead_price_settlement;
+        }
+    }
+
     const dir = path.join(DATA_ROOT, "市场概况");
     const files = getFiles(dir, ".xlsx").sort();
     let records = [];
@@ -239,10 +246,16 @@ function parseRolling() {
         
         for (let row of data) {
             let targetDate = row['标的日期'];
-            if (!targetDate) continue;
+            let tradeDate = row['交易日期'];
+            if (!targetDate || !tradeDate) continue;
             
-            let dateStr = dayjs(targetDate).format('YYYY-MM-DD');
-            if (!dateStr || dateStr === 'Invalid Date') continue;
+            let targetDateStr = dayjs(targetDate).format('YYYY-MM-DD');
+            let tradeDateStr = dayjs(tradeDate).format('YYYY-MM-DD');
+            if (!targetDateStr || targetDateStr === 'Invalid Date' || !tradeDateStr || tradeDateStr === 'Invalid Date') continue;
+            
+            // "只要交易日期为标的期-2天的数据"
+            let expectedTradeDate = dayjs(targetDateStr).subtract(2, 'day').format('YYYY-MM-DD');
+            if (tradeDateStr !== expectedTradeDate) continue;
             
             let timeRange = row['时段类型'] || "";
             let periodMatch = timeRange.match(/-(\d+):00/);
@@ -251,13 +264,17 @@ function parseRolling() {
                 period = parseInt(periodMatch[1], 10);
             }
             
+            let weightedPrice = parseFloat(row['加权价格']) || 0;
+            let dayaheadPrice = pricesMap[`${targetDateStr}_${period}`] || 0;
+            let spread = dayaheadPrice - weightedPrice;
+            
             records.push({
-                target_date: dateStr,
+                target_date: targetDateStr,
                 period: period,
                 volume: parseFloat(row['总成交量(日均)']) || 0,
                 max_price: parseFloat(row['最高价']) || 0,
                 min_price: parseFloat(row['最低价']) || 0,
-                spread: parseFloat(row['加权价格']) || 0
+                spread: spread
             });
         }
     }
@@ -399,7 +416,7 @@ try {
 console.log("Parsing rolling data...");
 let rolling = [];
 try {
-    rolling = parseRolling();
+    rolling = parseRolling(prices);
     console.log(`  Rolling: ${rolling.length} records`);
 } catch (e) {
     console.log(`  Rolling parsing failed: ${e}`);
