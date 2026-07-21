@@ -262,6 +262,40 @@ function App() {
     return filtered;
   }, [data, timeScale, dateRange, customDateStart, customDateEnd]);
 
+  const filteredRollingData = useMemo(() => {
+    if (!data || !data.rolling || data.rolling.length === 0) return [];
+    
+    let minDate = data.meta.date_range.start;
+    let maxDate = selectedDate || data.meta.date_range.end;
+    
+    if (dateRange === 'Custom' && customDateStart && customDateEnd) {
+      minDate = customDateStart;
+      maxDate = customDateEnd;
+    } else if (dateRange !== 'All' && selectedDate) {
+      const maxDateObj = new Date(selectedDate);
+      let days = 30;
+      switch (dateRange) {
+        case '1D': days = 1; break;
+        case '5D': days = 5; break;
+        case '1M': days = 30; break;
+        case '3M': days = 90; break;
+        case '6M': days = 180; break;
+        case '1Y': days = 365; break;
+        case '5Y': days = 1825; break;
+        case 'YTD': 
+          minDate = `${maxDateObj.getFullYear()}-01-01`;
+          days = -1;
+          break;
+        default: days = 30;
+      }
+      if (days > 0) {
+        minDate = new Date(maxDateObj.getTime() - (days - 1) * 24 * 3600 * 1000).toISOString().split('T')[0];
+      }
+    }
+    
+    return data.rolling.filter((r: any) => r.target_date >= minDate && r.target_date <= maxDate);
+  }, [data, dateRange, selectedDate, customDateStart, customDateEnd]);
+
   const xLabels = useMemo(() => {
     return currentData.map((r: any) => {
       if (timeScale === 'hourly') return `${r.date} ${String(r.period).padStart(2, '0')}:00`;
@@ -963,39 +997,6 @@ function App() {
   ];
 
 
-  const filteredRollingData = useMemo(() => {
-    if (!data || !data.rolling || data.rolling.length === 0) return [];
-    
-    let minDate = data.meta.date_range.start;
-    let maxDate = selectedDate || data.meta.date_range.end;
-    
-    if (dateRange === 'Custom' && customDateStart && customDateEnd) {
-      minDate = customDateStart;
-      maxDate = customDateEnd;
-    } else if (dateRange !== 'All' && selectedDate) {
-      const maxDateObj = new Date(selectedDate);
-      let days = 30;
-      switch (dateRange) {
-        case '1D': days = 1; break;
-        case '5D': days = 5; break;
-        case '1M': days = 30; break;
-        case '3M': days = 90; break;
-        case '6M': days = 180; break;
-        case '1Y': days = 365; break;
-        case '5Y': days = 1825; break;
-        case 'YTD': 
-          minDate = `${maxDateObj.getFullYear()}-01-01`;
-          days = -1;
-          break;
-        default: days = 30;
-      }
-      if (days > 0) {
-        minDate = new Date(maxDateObj.getTime() - (days - 1) * 24 * 3600 * 1000).toISOString().split('T')[0];
-      }
-    }
-    
-    return data.rolling.filter((r: any) => r.target_date >= minDate && r.target_date <= maxDate);
-  }, [data, dateRange, selectedDate, customDateStart, customDateEnd]);
 
   // ===============================
   // Page 6: Rolling Opportunities
