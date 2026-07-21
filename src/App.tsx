@@ -1282,10 +1282,10 @@ function App() {
             
             <div className="flex gap-4 h-[600px]">
               <div className="bg-white rounded border border-gray-200 shadow-sm p-4 flex-1">
-                <ReactECharts option={buildRollingVolatilityChart()} style={{ height: '100%', width: '100%' }} notMerge={true} />
+                <ReactECharts option={buildRollingVolatilityChart()} style={{ height: '100%', width: '100%', minHeight: '500px' }} notMerge={true} />
               </div>
               <div className="bg-white rounded border border-gray-200 shadow-sm p-4 w-1/3">
-                <ReactECharts option={buildRollingScatterChart()} style={{ height: '100%', width: '100%' }} notMerge={true} />
+                <ReactECharts option={buildRollingScatterChart()} style={{ height: '100%', width: '100%', minHeight: '500px' }} notMerge={true} />
               </div>
             </div>
           </div>
