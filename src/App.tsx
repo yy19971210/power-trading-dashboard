@@ -1280,7 +1280,7 @@ function App() {
               <div className="text-xs text-gray-400 text-center mt-2">提示: 点击热力图中的色块，即可在下方查看对应时段的深度剖析</div>
             </div>
             
-            <div className="flex gap-4 h-[400px]">
+            <div className="flex gap-4 h-[500px]">
               <div className="bg-white rounded border border-gray-200 shadow-sm p-4 flex-1">
                 <ReactECharts option={buildRollingVolatilityChart()} style={{ height: '100%', width: '100%' }} notMerge={true} />
               </div>
