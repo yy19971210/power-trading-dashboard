@@ -1264,10 +1264,10 @@ function App() {
           {/* ===== PAGE 5: ARBITRAGE ANALYSIS ===== */}
           {page === 'page6' && (
           <div className="flex flex-col h-full gap-4">
-            <div className="bg-white rounded border border-gray-200 shadow-sm p-4 h-[600px] flex flex-col">
+            <div className="bg-white rounded border border-gray-200 shadow-sm p-4 h-[800px] flex flex-col">
               <ReactECharts 
                 option={buildRollingHeatmap()} 
-                style={{ height: '100%', width: '100%', minHeight: '500px' }} 
+                style={{ height: '100%', width: '100%', minHeight: '700px' }} 
                 notMerge={false} 
                 onEvents={{
                   click: (params: any) => {
@@ -1280,7 +1280,7 @@ function App() {
               <div className="text-xs text-gray-400 text-center mt-2">提示: 点击热力图中的色块，即可在下方查看对应时段的深度剖析</div>
             </div>
             
-            <div className="flex gap-4 h-[500px]">
+            <div className="flex gap-4 h-[600px]">
               <div className="bg-white rounded border border-gray-200 shadow-sm p-4 flex-1">
                 <ReactECharts option={buildRollingVolatilityChart()} style={{ height: '100%', width: '100%' }} notMerge={true} />
               </div>
