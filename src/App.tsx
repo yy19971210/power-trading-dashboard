@@ -1034,7 +1034,7 @@ function App() {
         position: 'top',
         formatter: (p: any) => `标的日期: ${dates[p.data[1]]}<br/>时段: ${periods[p.data[0]]}:00<br/>交易机会价差: <b>${p.data[2].toFixed(2)}</b> 元/MWh`
       },
-      grid: { top: 40, bottom: 40, left: 80, right: 80 },
+      grid: { top: 40, height: Math.max(dates.length * 25, 50), left: 80, right: 80 },
       xAxis: { type: 'category', data: periods.map(p => `${p}:00`), splitArea: { show: true } },
       yAxis: { type: 'category', data: dates, splitArea: { show: true }, inverse: true },
       visualMap: {
@@ -1312,10 +1312,10 @@ function App() {
           {/* ===== PAGE 5: ARBITRAGE ANALYSIS ===== */}
           {page === 'page6' && (
           <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '16px', overflowY: 'auto', padding: '16px' }}>
-            <div style={{ background: '#fff', borderRadius: '4px', border: '1px solid #e0e3eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', padding: '16px', height: (rollingDatesCount * 25 + 132) + 'px', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+            <div style={{ background: '#fff', borderRadius: '4px', border: '1px solid #e0e3eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', padding: '16px', minHeight: '400px', height: Math.max(rollingDatesCount * 25 + 132, 400) + 'px', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
               <ReactECharts 
                 option={buildRollingHeatmap()} 
-                style={{ height: (rollingDatesCount * 25 + 100) + 'px', width: '100%' }} 
+                style={{ height: '100%', width: '100%' }} 
                 notMerge={false} 
                 onEvents={{
                   click: (params: any) => {
