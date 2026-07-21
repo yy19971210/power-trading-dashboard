@@ -18,11 +18,11 @@ interface DataRecord {
   [key: string]: any;
 }
 interface DataPayload {
-  hourly: DataRecord[]; daily: DataRecord[]; weekly: DataRecord[]; monthly: DataRecord[];
+  hourly: DataRecord[]; daily: DataRecord[]; weekly: DataRecord[]; monthly: DataRecord[]; rolling?: any[];
   meta: { total_hourly_records: number; date_range: { start: string; end: string }; generated_at: string; total_daily_records: number; total_weekly_records: number; total_monthly_records: number; };
 }
 type TimeScale = 'hourly' | 'daily' | 'weekly' | 'monthly';
-type PageId = 'page1' | 'page2' | 'page3' | 'page4' | 'page5';
+type PageId = 'page1' | 'page2' | 'page3' | 'page4' | 'page5' | 'page6';
 
 // ===============================
 // Constants
@@ -54,6 +54,7 @@ const PAGE_BTNS: { key: PageId; label: string }[] = [
   { key: 'page3', label: '竞价空间' },
   { key: 'page4', label: '现货价格对比' },
   { key: 'page5', label: '日前结算价差' },
+  { key: 'page6', label: '日滚动交易机会' },
 ];
 
 // ===============================
@@ -961,6 +962,145 @@ function App() {
     { abbr: 'SD', bg: '#2962ff', name: '水电出力', key: 'hydro' },
   ];
 
+
+  // ===============================
+  // Page 6: Rolling Opportunities
+  // ===============================
+  const buildRollingHeatmap = () => {
+    if (!data || !data.rolling || data.rolling.length === 0) return {};
+    
+    const dates = Array.from(new Set(data.rolling.map((r: any) => r.target_date))).sort();
+    const periods = Array.from({length: 24}, (_, i) => i + 1);
+    
+    const heatData = [];
+    let maxAbs = 0;
+    for(let d=0; d<dates.length; d++) {
+        for(let p=0; p<periods.length; p++) {
+            const r = data.rolling.find((x: any) => x.target_date === dates[d] && x.period === periods[p]);
+            if(r) {
+                heatData.push([p, d, r.spread]);
+                if(Math.abs(r.spread) > maxAbs) maxAbs = Math.abs(r.spread);
+            }
+        }
+    }
+    
+    return {
+      title: { text: '日滚动交易机会(D+2) 价差热力图', left: 8, top: 0, textStyle: { color: '#131722', fontSize: 14 } },
+      tooltip: {
+        position: 'top',
+        formatter: (p: any) => `标的日期: ${dates[p.data[1]]}<br/>时段: ${periods[p.data[0]]}:00<br/>交易机会价差: <b>${p.data[2].toFixed(2)}</b> 元/MWh`
+      },
+      grid: { top: 60, bottom: 40, left: 80, right: 20 },
+      xAxis: { type: 'category', data: periods.map(p => `${p}:00`), splitArea: { show: true } },
+      yAxis: { type: 'category', data: dates, splitArea: { show: true } },
+      visualMap: {
+        min: -maxAbs,
+        max: maxAbs,
+        calculable: true,
+        orient: 'horizontal',
+        left: 'center',
+        top: 25,
+        inRange: { color: ['#ef5350', '#ffffff', '#26a69a'] }
+      },
+      series: [{
+        type: 'heatmap',
+        data: heatData,
+        label: { show: false },
+        emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0, 0, 0, 0.5)' } }
+      }]
+    };
+  };
+
+  const buildRollingVolatilityChart = () => {
+    if (!data || !data.rolling || data.rolling.length === 0) return {};
+    const filtered = data.rolling.filter((r: any) => r.period === selectedRollingPeriod).sort((a: any, b: any) => a.target_date.localeCompare(b.target_date));
+    if(!filtered.length) return {};
+    
+    return {
+      title: { text: `时段 ${selectedRollingPeriod}:00 交易机会与流动性`, left: 8, top: 4, textStyle: { fontSize: 12 } },
+      tooltip: { 
+        trigger: 'axis',
+        axisPointer: { type: 'cross' }
+      },
+      legend: { data: ['加权价差', '极值区间', '成交量'], top: 25 },
+      grid: { left: 50, right: 50, top: 60, bottom: 30 },
+      xAxis: { type: 'category', data: filtered.map((d: any) => d.target_date) },
+      yAxis: [
+        { type: 'value', name: '价差(元/MWh)', position: 'left', splitLine: { show: true, lineStyle: { type: 'dashed', color: '#f0f0f0' } } },
+        { type: 'value', name: '成交量(MWh)', position: 'right', splitLine: { show: false } }
+      ],
+      series: [
+        {
+          name: '加权价差',
+          type: 'line',
+          data: filtered.map((d: any) => d.spread),
+          itemStyle: { color: '#2962FF' },
+          lineStyle: { width: 2 },
+          symbol: 'circle',
+          symbolSize: 6,
+          yAxisIndex: 0,
+          z: 3
+        },
+        {
+          name: '极值区间',
+          type: 'custom',
+          renderItem: function (params: any, api: any) {
+            var xValue = api.value(0);
+            var highPoint = api.coord([xValue, api.value(1)]);
+            var lowPoint = api.coord([xValue, api.value(2)]);
+            var halfWidth = api.size([1, 0])[0] * 0.1;
+            var style = api.style({ stroke: api.visual('color'), fill: 'transparent' });
+            return {
+              type: 'group',
+              children: [
+                { type: 'line', transition: ['shape'], shape: { x1: highPoint[0] - halfWidth, y1: highPoint[1], x2: highPoint[0] + halfWidth, y2: highPoint[1] }, style: style },
+                { type: 'line', transition: ['shape'], shape: { x1: highPoint[0], y1: highPoint[1], x2: lowPoint[0], y2: lowPoint[1] }, style: style },
+                { type: 'line', transition: ['shape'], shape: { x1: lowPoint[0] - halfWidth, y1: lowPoint[1], x2: lowPoint[0] + halfWidth, y2: lowPoint[1] }, style: style }
+              ]
+            };
+          },
+          encode: { x: 0, y: [1, 2] },
+          data: filtered.map((d: any) => {
+            const h = d.max_price != null && d.day_ahead_price != null ? d.max_price - d.day_ahead_price : d.spread;
+            const l = d.min_price != null && d.day_ahead_price != null ? d.min_price - d.day_ahead_price : d.spread;
+            return [d.target_date, h, l];
+          }),
+          itemStyle: { color: '#FF9800' },
+          yAxisIndex: 0,
+          z: 2
+        },
+        {
+          name: '成交量',
+          type: 'bar',
+          data: filtered.map((d: any) => d.volume),
+          itemStyle: { color: 'rgba(41, 98, 255, 0.2)' },
+          yAxisIndex: 1,
+          z: 1
+        }
+      ]
+    };
+  };
+
+  const buildRollingScatterChart = () => {
+    if (!data || !data.rolling || data.rolling.length === 0) return {};
+    return {
+      title: { text: '全时段 成交量 vs 价差分布', left: 8, top: 4, textStyle: { fontSize: 12 } },
+      tooltip: { 
+        trigger: 'item',
+        formatter: (p: any) => `日期: ${p.data[2]}<br/>时段: ${p.data[3]}:00<br/>成交量: ${p.data[0]}<br/>价差: ${p.data[1].toFixed(2)}`
+      },
+      grid: { left: 50, right: 30, top: 40, bottom: 40 },
+      xAxis: { type: 'value', name: '成交量(MWh)', nameLocation: 'middle', nameGap: 25, splitLine: { show: false } },
+      yAxis: { type: 'value', name: '价差(元/MWh)', splitLine: { show: true, lineStyle: { type: 'dashed', color: '#f0f0f0' } } },
+      series: [{
+        type: 'scatter',
+        symbolSize: 5,
+        itemStyle: { color: '#00897B', opacity: 0.6 },
+        data: data.rolling.map((r: any) => [r.volume, r.spread, r.target_date, r.period])
+      }]
+    };
+  };
+
   // ===== RENDER =====
   return (
     <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -1115,7 +1255,36 @@ function App() {
             </>
           )}
           {/* ===== PAGE 5: ARBITRAGE ANALYSIS ===== */}
-          {page === 'page5' && (
+          {page === 'page6' && (
+          <div className="flex flex-col h-full gap-4">
+            <div className="bg-white rounded border border-gray-200 shadow-sm p-4 h-[400px] flex flex-col">
+              <ReactECharts 
+                option={buildRollingHeatmap()} 
+                style={{ height: '100%', width: '100%' }} 
+                notMerge={true} 
+                onEvents={{
+                  click: (params: any) => {
+                    if (params.componentType === 'series') {
+                      setSelectedRollingPeriod(params.data[0] + 1);
+                    }
+                  }
+                }}
+              />
+              <div className="text-xs text-gray-400 text-center mt-2">提示: 点击热力图中的色块，即可在下方查看对应时段的深度剖析</div>
+            </div>
+            
+            <div className="flex gap-4 h-[400px]">
+              <div className="bg-white rounded border border-gray-200 shadow-sm p-4 flex-1">
+                <ReactECharts option={buildRollingVolatilityChart()} style={{ height: '100%', width: '100%' }} notMerge={true} />
+              </div>
+              <div className="bg-white rounded border border-gray-200 shadow-sm p-4 w-1/3">
+                <ReactECharts option={buildRollingScatterChart()} style={{ height: '100%', width: '100%' }} notMerge={true} />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {page === 'page5' && (
             <div style={{ display: 'flex', height: '100%', padding: '4px' }}>
               <div style={{ width: '50%', height: '100%', borderRight: '1px solid #e0e3eb', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
                 <div style={{ height: '90%', aspectRatio: '1 / 1' }}>
