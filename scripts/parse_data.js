@@ -226,7 +226,45 @@ function buildRecords(arr, timeKey) {
     });
 }
 
-function aggregateAndExport(ops, prices, weather) {
+// 4. Rolling (市场概况)
+function parseRolling() {
+    const dir = path.join(DATA_ROOT, "市场概况");
+    const files = getFiles(dir, ".xlsx").sort();
+    let records = [];
+    for (const file of files) {
+        console.log(`  Reading rolling: ${path.basename(file)}`);
+        const workbook = xlsx.readFile(file, { cellDates: false });
+        const sheetName = workbook.SheetNames[0];
+        const data = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName], { raw: false });
+        
+        for (let row of data) {
+            let targetDate = row['标的日期'];
+            if (!targetDate) continue;
+            
+            let dateStr = dayjs(targetDate).format('YYYY-MM-DD');
+            if (!dateStr || dateStr === 'Invalid Date') continue;
+            
+            let timeRange = row['时段类型'] || "";
+            let periodMatch = timeRange.match(/-(\d+):00/);
+            let period = 1;
+            if (periodMatch) {
+                period = parseInt(periodMatch[1], 10);
+            }
+            
+            records.push({
+                target_date: dateStr,
+                period: period,
+                volume: parseFloat(row['总成交量(日均)']) || 0,
+                max_price: parseFloat(row['最高价']) || 0,
+                min_price: parseFloat(row['最低价']) || 0,
+                spread: parseFloat(row['加权价格']) || 0
+            });
+        }
+    }
+    return records;
+}
+
+function aggregateAndExport(ops, prices, weather, rolling) {
     let result = {};
     
     let mergedMap = {};
@@ -328,9 +366,14 @@ function aggregateAndExport(ops, prices, weather) {
         total_daily_records: result.daily.length,
         total_weekly_records: result.weekly.length,
         total_monthly_records: result.monthly.length,
+        total_rolling_records: rolling ? rolling.length : 0,
         date_range: { start: start_date, end: end_date },
         generated_at: new Date().toISOString()
     };
+    
+    if (rolling && rolling.length > 0) {
+        result.rolling = rolling;
+    }
     
     return result;
 }
@@ -353,8 +396,17 @@ try {
     console.log(`  Weather parsing failed: ${e}`);
 }
 
+console.log("Parsing rolling data...");
+let rolling = [];
+try {
+    rolling = parseRolling();
+    console.log(`  Rolling: ${rolling.length} records`);
+} catch (e) {
+    console.log(`  Rolling parsing failed: ${e}`);
+}
+
 console.log("Aggregating and exporting...");
-let result = aggregateAndExport(ops, prices, weather);
+let result = aggregateAndExport(ops, prices, weather, rolling);
 
 // write result
 fs.mkdirSync(path.dirname(OUT_FILE), { recursive: true });
