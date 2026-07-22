@@ -1886,7 +1886,8 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
                 <span style={{ fontSize: '11px', color: '#9ca3af', marginLeft: '4px' }}>💡 点击热力图也可快速选择</span>
               </div>
 
-              <div style={{ flex: 1, minHeight: 0 }}>
+              <div style={{ flex: 1, minHeight: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                <div style={{ aspectRatio: '1 / 1', width: '100%', maxHeight: '100%' }}>
                 <ReactECharts
                   option={buildStrategyScannerHeatmap()}
                   style={{ height: '100%', width: '100%' }}
@@ -1900,6 +1901,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
                     }
                   }}
                 />
+                </div>
               </div>
             </div>
 
