@@ -1059,7 +1059,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
     const maxAbs = Math.max(Math.abs(maxVal), Math.abs(minVal));
 
     return {
-      title: { text: '全时段平均套利空间矩阵 (日前 − 现货)', left: 0, top: 2, textStyle: { color: '#131722', fontSize: 12, fontWeight: 600 } },
+      title: { text: '全时段平均套利空间矩阵 (日前 - 现货)', left: 0, top: 0, textStyle: { color: '#131722', fontSize: 13, fontWeight: 600 } },
       tooltip: {
         position: 'top',
         formatter: (p: any) => {
@@ -1069,42 +1069,25 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
           return `时段 A: ${a}<br/>时段 B: ${b}<br/>平均套利空间: <b>${space}</b> 元/MWh`;
         }
       },
-      grid: { top: 28, right: 44, left: 8, bottom: 32, containLabel: true },
-      xAxis: {
-        type: 'category', data: periods, name: '时段A (买入)',
-        nameLocation: 'center', nameGap: 18, nameTextStyle: { color: '#787b86', fontSize: 10 },
-        splitArea: { show: true, areaStyle: { color: ['rgba(0,0,0,0)', 'rgba(0,0,0,0.02)'] } },
-        axisLabel: { fontSize: 9, interval: 0 },
-        axisLine: { lineStyle: { color: '#e0e3eb' } },
-        axisTick: { show: false }
-      },
-      yAxis: {
-        type: 'category', data: periods, name: '时段B (卖出)',
-        nameLocation: 'center', nameGap: 18, nameTextStyle: { color: '#787b86', fontSize: 10 },
-        splitArea: { show: true, areaStyle: { color: ['rgba(0,0,0,0)', 'rgba(0,0,0,0.02)'] } },
-        axisLabel: { fontSize: 9, interval: 0 },
-        axisLine: { lineStyle: { color: '#e0e3eb' } },
-        axisTick: { show: false }
-      },
+      grid: { height: '80%', top: 35, right: 45, left: 35, bottom: 35 },
+      xAxis: { type: 'category', data: periods, name: '时段A', splitArea: { show: true }, axisLabel: { fontSize: 10, interval: 0 } },
+      yAxis: { type: 'category', data: periods, name: '时段B', splitArea: { show: true }, axisLabel: { fontSize: 10, interval: 0 } },
       visualMap: {
         min: -maxAbs,
         max: maxAbs,
         calculable: true,
         orient: 'vertical',
-        right: 2,
+        right: 0,
         top: 'center',
-        itemWidth: 8,
-        itemHeight: 100,
-        text: ['高', '低'],
-        textStyle: { fontSize: 9, color: '#787b86' },
-        inRange: { color: ['#089981', '#f5f5f5', '#f23645'] }
+        itemWidth: 10,
+        inRange: { color: ['#089981', '#ffffff', '#f23645'] }
       },
       series: [{
         name: '套利空间',
         type: 'heatmap',
         data: strategyScannerData,
         label: { show: false },
-        emphasis: { itemStyle: { shadowBlur: 8, shadowColor: 'rgba(0, 0, 0, 0.4)' } }
+        emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0, 0, 0, 0.5)' } }
       }]
     };
   };
@@ -1879,31 +1862,32 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
           <div style={{ display: 'flex', height: '100%', padding: '10px', gap: '14px', boxSizing: 'border-box' }}>
 
             {/* LEFT COLUMN: Controls + Heatmap */}
-            <div style={{ width: '48%', flexShrink: 0, height: '100%', display: 'flex', flexDirection: 'column', gap: '8px', background: '#fff', borderRadius: '6px', border: '1px solid #e0e3eb', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '10px', boxSizing: 'border-box' }}>
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexShrink: 0, paddingBottom: '8px', borderBottom: '1px solid #f0f3fa', flexWrap: 'wrap' }}>
-                <span style={{ fontWeight: 600, color: '#131722', fontSize: '12px' }}>套利时段对：</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <span style={{ color: '#4b5563', fontSize: '12px' }}>A:</span>
+            <div style={{ width: '42%', flexShrink: 0, height: '100%', display: 'flex', flexDirection: 'column', gap: '10px', background: '#fff', borderRadius: '6px', border: '1px solid #e0e3eb', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '14px', boxSizing: 'border-box' }}>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexShrink: 0, paddingBottom: '10px', borderBottom: '1px solid #f0f3fa', flexWrap: 'wrap' }}>
+                <span style={{ fontWeight: 600, color: '#131722', fontSize: '13px' }}>选择套利时段对：</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ color: '#4b5563', fontSize: '13px' }}>时段A:</span>
                   <select
                     value={strategySpreadPointA}
                     onChange={e => setStrategySpreadPointA(Number(e.target.value))}
-                    style={{ padding: '3px 8px', border: '1px solid #d0d5dd', borderRadius: '4px', outline: 'none', fontSize: '12px', background: '#fff', cursor: 'pointer' }}>
+                    style={{ padding: '4px 10px', border: '1px solid #d0d5dd', borderRadius: '4px', outline: 'none', fontSize: '13px', background: '#fff', cursor: 'pointer' }}>
                     {Array.from({length: 24}, (_, i) => i+1).map(h => <option key={h} value={h}>{h}</option>)}
                   </select>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <span style={{ color: '#4b5563', fontSize: '12px' }}>B:</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ color: '#4b5563', fontSize: '13px' }}>时段B:</span>
                   <select
                     value={strategySpreadPointB}
                     onChange={e => setStrategySpreadPointB(Number(e.target.value))}
-                    style={{ padding: '3px 8px', border: '1px solid #d0d5dd', borderRadius: '4px', outline: 'none', fontSize: '12px', background: '#fff', cursor: 'pointer' }}>
+                    style={{ padding: '4px 10px', border: '1px solid #d0d5dd', borderRadius: '4px', outline: 'none', fontSize: '13px', background: '#fff', cursor: 'pointer' }}>
                     {Array.from({length: 24}, (_, i) => i+1).map(h => <option key={h} value={h}>{h}</option>)}
                   </select>
                 </div>
-                <span style={{ fontSize: '10px', color: '#9ca3af' }}>💡 点击热力图也可选择</span>
+                <span style={{ fontSize: '11px', color: '#9ca3af', marginLeft: '4px' }}>💡 点击热力图也可快速选择</span>
               </div>
 
-              <div style={{ flex: 1, minHeight: 0 }}>
+              <div style={{ flex: 1, minHeight: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                <div style={{ aspectRatio: '1 / 1', width: '100%', maxHeight: '100%' }}>
                 <ReactECharts
                   option={buildStrategyScannerHeatmap()}
                   style={{ height: '100%', width: '100%' }}
@@ -1917,6 +1901,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
                     }
                   }}
                 />
+                </div>
               </div>
             </div>
 
