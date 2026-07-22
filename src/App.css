@@ -155,6 +155,7 @@ body {
   flex: 1;
   overflow: hidden;
   height: calc(100vh - 38px);
+  position: relative;
 }
 
 .tv-chart-area {
@@ -224,6 +225,12 @@ body {
   flex-direction: column;
   flex-shrink: 0;
   overflow-y: auto;
+  position: absolute;
+  right: 44px;
+  top: 0;
+  bottom: 0;
+  z-index: 100;
+  box-shadow: -4px 0 16px rgba(0,0,0,0.1);
 }
 
 .tv-watchlist-header {
