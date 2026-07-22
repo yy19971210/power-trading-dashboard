@@ -119,7 +119,8 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [timeScale, setTimeScale] = useState<TimeScale>('hourly');
   const [dateRange, setDateRange] = useState<string>('1M');
-  const [selectedBiddingHour, setSelectedBiddingHour] = useState<number | null>(null);
+  const [selectedBiddingHours, setSelectedBiddingHours] = useState<number[]>([]);
+  const [lastClickedHour, setLastClickedHour] = useState<number | null>(null);
   const [colorByHour, setColorByHour] = useState<boolean>(true);
   
   // Page 5 specific state
@@ -137,6 +138,26 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
   const [customDateStart, setCustomDateStart] = useState('');
   const [customDateEnd, setCustomDateEnd] = useState('');
   const [currentTime, setCurrentTime] = useState('');
+
+  const handleHourClick = (h: number, e: React.MouseEvent) => {
+    if (e.shiftKey && lastClickedHour !== null) {
+      const start = Math.min(lastClickedHour, h);
+      const end = Math.max(lastClickedHour, h);
+      const range = Array.from({ length: end - start + 1 }, (_, i) => start + i);
+      setSelectedBiddingHours(prev => Array.from(new Set([...prev, ...range])).sort((a, b) => a - b));
+    } else if (e.ctrlKey || e.metaKey) {
+      setSelectedBiddingHours(prev => 
+        prev.includes(h) ? prev.filter(x => x !== h) : [...prev, h].sort((a, b) => a - b)
+      );
+    } else {
+      if (selectedBiddingHours.length === 1 && selectedBiddingHours[0] === h) {
+        setSelectedBiddingHours([]); 
+      } else {
+        setSelectedBiddingHours([h]);
+      }
+    }
+    setLastClickedHour(h);
+  };
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -663,8 +684,8 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
     const allPairs: [number, number, string][] = [];
 
     const isHourVisible = (h: number) => {
-      if (selectedBiddingHour === null) return true;
-      return selectedBiddingHour === h;
+      if (selectedBiddingHours.length === 0) return true;
+      return selectedBiddingHours.includes(h);
     };
 
     filtered.forEach(r => {
@@ -695,15 +716,16 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
       const visible = isHourVisible(h);
       const hourName = `${String(h).padStart(2, '0')}:00 时段`;
       const color = HOUR_COLORS_24[h - 1];
+      const isSelected = selectedBiddingHours.length > 0 && selectedBiddingHours.includes(h);
 
       seriesList.push({
         name: hourName,
         type: 'scatter',
         data: visible ? hourSeriesMap[h] : [],
-        symbolSize: selectedBiddingHour === h ? 8 : 6,
+        symbolSize: isSelected ? 8 : 6,
         itemStyle: {
           color: color,
-          opacity: selectedBiddingHour === h ? 0.9 : 0.75
+          opacity: isSelected ? 0.9 : 0.75
         },
         emphasis: {
           itemStyle: {
@@ -729,9 +751,9 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
       });
     }
 
-    const selectedCountStr = selectedBiddingHour === null 
+    const selectedCountStr = selectedBiddingHours.length === 0 
       ? '全部24个时段' 
-      : `聚焦单时段 (${String(selectedBiddingHour).padStart(2, '0')}:00 时段)`;
+      : `多时段聚焦 (${selectedBiddingHours.map(h => String(h).padStart(2, '0')).join(', ')} 时段)`;
 
     return {
       animation: false,
@@ -1714,15 +1736,15 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
               }}>
                 {/* "All" Pill */}
                 <button
-                  onClick={() => setSelectedBiddingHour(null)}
+                  onClick={() => { setSelectedBiddingHours([]); setLastClickedHour(null); }}
                   style={{
                     padding: '6px 16px',
                     fontSize: '13px',
                     fontWeight: 600,
                     borderRadius: '20px',
                     border: 'none',
-                    background: selectedBiddingHour === null ? '#131722' : '#f3f4f6',
-                    color: selectedBiddingHour === null ? '#ffffff' : '#374151',
+                    background: selectedBiddingHours.length === 0 ? '#131722' : '#f3f4f6',
+                    color: selectedBiddingHours.length === 0 ? '#ffffff' : '#374151',
                     cursor: 'pointer',
                     transition: 'all 0.2s'
                   }}
@@ -1734,13 +1756,13 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                   {Array.from({ length: 24 }, (_, i) => {
                     const h = i + 1;
-                    const isSelected = selectedBiddingHour === h;
+                    const isSelected = selectedBiddingHours.includes(h);
                     const hourColor = HOUR_COLORS_24[i];
 
                     return (
                       <button
                         key={h}
-                        onClick={() => setSelectedBiddingHour(prev => prev === h ? null : h)}
+                        onClick={(e) => handleHourClick(h, e)}
                         style={{
                           width: '32px',
                           height: '32px',
