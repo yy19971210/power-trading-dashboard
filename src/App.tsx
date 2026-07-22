@@ -1903,7 +1903,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
           <div style={{ display: 'flex', height: '100%', padding: '8px', gap: '12px', boxSizing: 'border-box' }}>
             
             {/* LEFT COLUMN: Controls + Heatmap */}
-            <div style={{ width: '380px', flexShrink: 0, height: '100%', display: 'flex', flexDirection: 'column', gap: '8px', background: '#fff', borderRadius: '4px', border: '1px solid #e0e3eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', padding: '12px', boxSizing: 'border-box' }}>
+            <div style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column', gap: '8px', background: '#fff', borderRadius: '4px', border: '1px solid #e0e3eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', padding: '12px', boxSizing: 'border-box' }}>
               <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexShrink: 0, paddingBottom: '8px', borderBottom: '1px solid #f0f3fa' }}>
                 <span style={{ fontWeight: 600, color: '#131722', fontSize: '13px' }}>选择套利时段对：</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -1946,7 +1946,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
             </div>
 
             {/* RIGHT COLUMN: Dual Grid Combined Chart */}
-            <div style={{ flex: 1, minWidth: 0, height: '100%', background: '#fff', borderRadius: '4px', border: '1px solid #e0e3eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', padding: '12px', boxSizing: 'border-box' }}>
+            <div style={{ width: '450px', flexShrink: 0, height: '100%', background: '#fff', borderRadius: '4px', border: '1px solid #e0e3eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', padding: '12px', boxSizing: 'border-box' }}>
               <ReactECharts option={buildStrategyRightCombinedChart()} style={{ height: '100%', width: '100%' }} notMerge={true} />
             </div>
 
