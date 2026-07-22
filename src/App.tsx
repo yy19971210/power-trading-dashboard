@@ -233,6 +233,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
 
   useEffect(() => {
     echarts.connect('sync-overview');
+    echarts.connect('strategy-spread');
   }, []);
 
   useEffect(() => {
@@ -1101,9 +1102,26 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
 
     return {
       title: { text: `价差趋势对比 (时段 ${strategySpreadPointB} - 时段 ${strategySpreadPointA})`, left: 8, top: 4, textStyle: { color: '#131722', fontSize: 13, fontWeight: 600 } },
-      tooltip: { trigger: 'axis' },
+      tooltip: {
+        trigger: 'axis',
+        backgroundColor: '#fff',
+        borderColor: '#e0e3eb',
+        textStyle: { color: '#131722', fontSize: 12 },
+        formatter: (params: any) => {
+          if (!Array.isArray(params)) params = [params];
+          let html = `<div style="font-weight:600;margin-bottom:4px;">${params[0].name}</div>`;
+          params.forEach((p: any) => {
+            html += `<div style="display:flex;justify-content:space-between;width:165px;">
+                      <span style="color:${p.color}">${p.seriesName}</span>
+                      <span style="font-weight:600">${Number(p.value).toFixed(2)} <span style="font-size:10px;color:#787b86">元/MWh</span></span>
+                     </div>`;
+          });
+          return html;
+        }
+      },
+      axisPointer: { type: 'line', lineStyle: { color: '#787b86', type: 'dashed', width: 1 } },
       legend: { data: ['日前结算价差', '加权交易均价差'], top: 4, right: 10, textStyle: { fontSize: 11 }, icon: 'roundRect', itemWidth: 14, itemHeight: 3 },
-      grid: { top: 36, left: 50, right: 20, bottom: 30, containLabel: true },
+      grid: { top: 36, left: 55, right: 20, bottom: 30, containLabel: true },
       xAxis: { type: 'category', data: dates, boundaryGap: false, axisLabel: { fontSize: 10, interval: intervalStep, formatter: (val: string) => (val && val.length >= 10 ? val.slice(5) : val) } },
       yAxis: { type: 'value', name: '元/MWh', splitLine: { lineStyle: { color: '#f0f3fa' } }, axisLabel: { fontSize: 10 } },
       series: [
@@ -1121,8 +1139,24 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
 
     return {
       title: { text: '套利收益空间 (日前价差 - 加权均价差)', left: 8, top: 4, textStyle: { color: '#131722', fontSize: 13, fontWeight: 600 } },
-      tooltip: { trigger: 'axis', formatter: (params: any) => `${params[0].name}<br/>套利空间: <b>${Number(params[0].value).toFixed(2)}</b> 元/MWh` },
-      grid: { top: 36, left: 50, right: 20, bottom: 30, containLabel: true },
+      tooltip: {
+        trigger: 'axis',
+        backgroundColor: '#fff',
+        borderColor: '#e0e3eb',
+        textStyle: { color: '#131722', fontSize: 12 },
+        formatter: (params: any) => {
+          const p = Array.isArray(params) ? params[0] : params;
+          const val = Number(p.value).toFixed(2);
+          const color = Number(p.value) >= 0 ? '#f23645' : '#089981';
+          return `<div style="font-weight:600;margin-bottom:4px;">${p.name}</div>
+                  <div style="display:flex;justify-content:space-between;width:165px;">
+                    <span style="color:#787b86">套利空间</span>
+                    <span style="font-weight:600;color:${color}">${val} <span style="font-size:10px;color:#787b86">元/MWh</span></span>
+                  </div>`;
+        }
+      },
+      axisPointer: { type: 'line', lineStyle: { color: '#787b86', type: 'dashed', width: 1 } },
+      grid: { top: 36, left: 55, right: 20, bottom: 30, containLabel: true },
       xAxis: { type: 'category', data: dates, boundaryGap: true, axisTick: { alignWithLabel: true }, axisLabel: { fontSize: 10, interval: intervalStep, formatter: (val: string) => (val && val.length >= 10 ? val.slice(5) : val) } },
       yAxis: { type: 'value', name: '元/MWh', splitLine: { lineStyle: { color: '#f0f3fa' } }, axisLabel: { fontSize: 10 } },
       series: [{
@@ -1877,12 +1911,12 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
 
               {/* TOP RIGHT: Spread Trend Chart */}
               <div style={{ flex: 1, minHeight: 0, background: '#fff', borderRadius: '6px', border: '1px solid #e0e3eb', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '14px', boxSizing: 'border-box' }}>
-                <ReactECharts option={buildStrategySpreadTrendChart()} style={{ height: '100%', width: '100%' }} notMerge={true} />
+                <ReactECharts option={buildStrategySpreadTrendChart()} style={{ height: '100%', width: '100%' }} notMerge={true} onChartReady={(c: any) => { c.group = 'strategy-spread'; }} />
               </div>
 
               {/* BOTTOM RIGHT: Arbitrage Space Chart */}
               <div style={{ flex: 1, minHeight: 0, background: '#fff', borderRadius: '6px', border: '1px solid #e0e3eb', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '14px', boxSizing: 'border-box' }}>
-                <ReactECharts option={buildStrategySpreadSpaceChart()} style={{ height: '100%', width: '100%' }} notMerge={true} />
+                <ReactECharts option={buildStrategySpreadSpaceChart()} style={{ height: '100%', width: '100%' }} notMerge={true} onChartReady={(c: any) => { c.group = 'strategy-spread'; }} />
               </div>
 
             </div>
