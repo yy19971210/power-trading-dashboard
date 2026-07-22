@@ -773,9 +773,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
       });
     }
 
-    const selectedCountStr = selectedBiddingHours.length === 0 
-      ? '全部24个时段' 
-      : `多时段聚焦 (${selectedBiddingHours.map(h => String(h).padStart(2, '0')).join(', ')} 时段)`;
+
 
     return {
       animation: false,
@@ -800,7 +798,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
       grid: { left: 16, right: !colorByHour ? 60 : 30, top: 60, bottom: 40, containLabel: true },
       title: {
         text: '日前竞价空间 vs 日前价格 散点分布图',
-        subtext: `范围: ${minDate} 至 ${maxDate} | ${selectedCountStr} | N = ${allPairs.length} | R² = ${reg.r2.toFixed(4)} | y = ${reg.slope.toFixed(6)}x + ${reg.intercept.toFixed(2)}`,
+        subtext: `范围: ${minDate} 至 ${maxDate} | N = ${allPairs.length} | R² = ${reg.r2.toFixed(4)} | y = ${reg.slope.toFixed(6)}x + ${reg.intercept.toFixed(2)}`,
         left: 12, 
         top: 4,
         textStyle: { color: '#131722', fontSize: 14, fontWeight: 600 },
