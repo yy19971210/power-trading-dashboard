@@ -1069,7 +1069,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
           return `时段 A: ${a}<br/>时段 B: ${b}<br/>平均套利空间: <b>${space}</b> 元/MWh`;
         }
       },
-      grid: { height: '85%', top: 30, right: 40, left: 30, bottom: 28 },
+      grid: { height: '80%', top: 35, right: 45, left: 35, bottom: 35 },
       xAxis: { type: 'category', data: periods, name: '时段A', splitArea: { show: true }, axisLabel: { fontSize: 10, interval: 0 } },
       yAxis: { type: 'category', data: periods, name: '时段B', splitArea: { show: true }, axisLabel: { fontSize: 10, interval: 0 } },
       visualMap: {
@@ -1862,28 +1862,28 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
           <div style={{ display: 'flex', height: '100%', padding: '10px', gap: '14px', boxSizing: 'border-box' }}>
 
             {/* LEFT COLUMN: Controls + Heatmap */}
-            <div style={{ width: '50%', flexShrink: 0, height: '100%', display: 'flex', flexDirection: 'column', gap: '6px', background: '#fff', borderRadius: '6px', border: '1px solid #e0e3eb', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '10px', boxSizing: 'border-box' }}>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexShrink: 0, paddingBottom: '6px', borderBottom: '1px solid #f0f3fa', flexWrap: 'wrap' }}>
-                <span style={{ fontWeight: 600, color: '#131722', fontSize: '12px' }}>套利时段对：</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <span style={{ color: '#4b5563', fontSize: '12px' }}>A:</span>
+            <div style={{ width: '42%', flexShrink: 0, height: '100%', display: 'flex', flexDirection: 'column', gap: '10px', background: '#fff', borderRadius: '6px', border: '1px solid #e0e3eb', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '14px', boxSizing: 'border-box' }}>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexShrink: 0, paddingBottom: '10px', borderBottom: '1px solid #f0f3fa', flexWrap: 'wrap' }}>
+                <span style={{ fontWeight: 600, color: '#131722', fontSize: '13px' }}>选择套利时段对：</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ color: '#4b5563', fontSize: '13px' }}>时段A:</span>
                   <select
                     value={strategySpreadPointA}
                     onChange={e => setStrategySpreadPointA(Number(e.target.value))}
-                    style={{ padding: '3px 8px', border: '1px solid #d0d5dd', borderRadius: '4px', outline: 'none', fontSize: '12px', background: '#fff', cursor: 'pointer' }}>
+                    style={{ padding: '4px 10px', border: '1px solid #d0d5dd', borderRadius: '4px', outline: 'none', fontSize: '13px', background: '#fff', cursor: 'pointer' }}>
                     {Array.from({length: 24}, (_, i) => i+1).map(h => <option key={h} value={h}>{h}</option>)}
                   </select>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <span style={{ color: '#4b5563', fontSize: '12px' }}>B:</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <span style={{ color: '#4b5563', fontSize: '13px' }}>时段B:</span>
                   <select
                     value={strategySpreadPointB}
                     onChange={e => setStrategySpreadPointB(Number(e.target.value))}
-                    style={{ padding: '3px 8px', border: '1px solid #d0d5dd', borderRadius: '4px', outline: 'none', fontSize: '12px', background: '#fff', cursor: 'pointer' }}>
+                    style={{ padding: '4px 10px', border: '1px solid #d0d5dd', borderRadius: '4px', outline: 'none', fontSize: '13px', background: '#fff', cursor: 'pointer' }}>
                     {Array.from({length: 24}, (_, i) => i+1).map(h => <option key={h} value={h}>{h}</option>)}
                   </select>
                 </div>
-                <span style={{ fontSize: '10px', color: '#9ca3af' }}>💡 点击热力图也可选择</span>
+                <span style={{ fontSize: '11px', color: '#9ca3af', marginLeft: '4px' }}>💡 点击热力图也可快速选择</span>
               </div>
 
               <div style={{ flex: 1, minHeight: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
