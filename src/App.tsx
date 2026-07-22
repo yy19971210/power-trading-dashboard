@@ -784,9 +784,8 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
         formatter: (p: any) => {
           if (p.seriesType === 'scatter') {
             const v = p.value || p.data || [];
-            return `<div style="font-weight:600;margin-bottom:4px;color:${p.color}">🕒 ${v[3] ? String(v[3]).padStart(2, '0') + ':00 时段' : p.seriesName}</div>
+            return `<div style="font-weight:600;margin-bottom:4px;color:${p.color}">🕒 ${v[2] || '—'}</div>
                     <div style="font-size:12px;line-height:1.6;">
-                      <div><span style="color:#787b86">日期时间: </span><b style="color:#131722">${v[2] || '—'}</b></div>
                       <div><span style="color:#787b86">竞价空间: </span><b style="color:#131722">${v[0]?.toFixed(0)} MW</b></div>
                       <div><span style="color:#787b86">日前价格: </span><b style="color:#131722">${v[1]?.toFixed(2)} 元/MWh</b></div>
                     </div>`;
