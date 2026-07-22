@@ -2,7 +2,6 @@ import { useEffect, useState, useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts';
 import dayjs from 'dayjs';
-import { Select } from 'antd';
 import './App.css';
 
 // ===============================
@@ -120,7 +119,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [timeScale, setTimeScale] = useState<TimeScale>('hourly');
   const [dateRange, setDateRange] = useState<string>('1M');
-  const [biddingSelectedHours, setBiddingSelectedHours] = useState<number[]>(Array.from({ length: 24 }, (_, i) => i + 1));
+  const [selectedBiddingHour, setSelectedBiddingHour] = useState<number | null>(null);
   
   // Page 5 specific state
   const [selectedArbitragePair, setSelectedArbitragePair] = useState<[number, number]>([4, 19]);
@@ -662,6 +661,11 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
 
     const allPairs: [number, number, string][] = [];
 
+    const isHourVisible = (h: number) => {
+      if (selectedBiddingHour === null) return true;
+      return selectedBiddingHour === h;
+    };
+
     filtered.forEach(r => {
       const bs = r.bidding_space;
       const price = r.price_dayahead;
@@ -670,7 +674,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
         const timeLabel = `${r.date} ${String(period).padStart(2, '0')}:00`;
         hourSeriesMap[period].push([bs, price, timeLabel, period]);
 
-        if (biddingSelectedHours.includes(period)) {
+        if (isHourVisible(period)) {
           allPairs.push([bs, price, timeLabel]);
         }
       }
@@ -687,24 +691,24 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
     const seriesList: any[] = [];
 
     for (let h = 1; h <= 24; h++) {
-      const isSelected = biddingSelectedHours.includes(h);
+      const visible = isHourVisible(h);
       const hourName = `${String(h).padStart(2, '0')}:00 时段`;
       const color = HOUR_COLORS_24[h - 1];
 
       seriesList.push({
         name: hourName,
         type: 'scatter',
-        data: isSelected ? hourSeriesMap[h] : [],
-        symbolSize: 6,
+        data: visible ? hourSeriesMap[h] : [],
+        symbolSize: selectedBiddingHour === h ? 8 : 6,
         itemStyle: {
           color: color,
-          opacity: 0.75
+          opacity: selectedBiddingHour === h ? 0.9 : 0.75
         },
         emphasis: {
           itemStyle: {
             opacity: 1,
             borderColor: '#131722',
-            borderWidth: 1
+            borderWidth: 1.5
           }
         },
         large: hourSeriesMap[h].length > 5000,
@@ -724,11 +728,9 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
       });
     }
 
-    const selectedCountStr = biddingSelectedHours.length === 24 
+    const selectedCountStr = selectedBiddingHour === null 
       ? '全部24个时段' 
-      : biddingSelectedHours.length === 0 
-        ? '未选择时段' 
-        : `选中 ${biddingSelectedHours.length} 个时段`;
+      : `聚焦单时段 (${String(selectedBiddingHour).padStart(2, '0')}:00 时段)`;
 
     return {
       animation: false,
@@ -764,7 +766,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
       },
       grid: { left: 16, right: 30, top: 100, bottom: 40, containLabel: true },
       title: {
-        text: '日前竞价空间 vs 日前价格 散点分布图 (按1-24时段独立着色)',
+        text: '日前竞价空间 vs 日前价格 散点分布图 (1-24胶囊时段着色与单聚焦)',
         subtext: `范围: ${minDate} 至 ${maxDate} | ${selectedCountStr} | N = ${allPairs.length} | R² = ${reg.r2.toFixed(4)} | y = ${reg.slope.toFixed(6)}x + ${reg.intercept.toFixed(2)}`,
         left: 12, 
         top: 4,
@@ -1696,85 +1698,102 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
           {/* ===== PAGE 3: BIDDING SPACE ===== */}
           {page === 'page3' && (
             <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '8px', gap: '8px', boxSizing: 'border-box' }}>
-              {/* Header Toolbar */}
+              {/* Header Pill Control Toolbar */}
               <div style={{ 
                 background: '#fff', 
                 border: '1px solid #e0e3eb', 
-                borderRadius: '6px', 
-                padding: '10px 16px', 
-                display: 'flex', 
-                flexWrap: 'wrap', 
-                alignItems: 'center', 
-                justifyContent: 'space-between',
-                gap: '12px',
-                boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
+                borderRadius: '8px', 
+                padding: '12px 16px', 
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.03)'
               }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                  <span style={{ fontWeight: 600, fontSize: '13px', color: '#131722', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ color: '#2962ff' }}>🕒</span> 时段筛选 (1-24):
-                  </span>
-                  
-                  {/* Preset Buttons */}
-                  <div style={{ display: 'flex', gap: '4px' }}>
-                    <button 
-                      onClick={() => setBiddingSelectedHours(Array.from({ length: 24 }, (_, i) => i + 1))}
-                      style={{ padding: '4px 10px', fontSize: '12px', borderRadius: '4px', border: '1px solid #d9d9d9', background: biddingSelectedHours.length === 24 ? '#2962ff' : '#fff', color: biddingSelectedHours.length === 24 ? '#fff' : '#131722', cursor: 'pointer' }}
+                {/* Top Control Bar */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 600, fontSize: '13px', color: '#131722', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <span style={{ color: '#2962ff' }}>🕒</span> 时段胶囊聚焦:
+                    </span>
+
+                    {/* "All" Pill */}
+                    <button
+                      onClick={() => setSelectedBiddingHour(null)}
+                      style={{
+                        padding: '4px 14px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        borderRadius: '20px',
+                        border: selectedBiddingHour === null ? '1px solid #2962ff' : '1px solid #d1d5db',
+                        background: selectedBiddingHour === null ? '#2962ff' : '#ffffff',
+                        color: selectedBiddingHour === null ? '#ffffff' : '#374151',
+                        cursor: 'pointer',
+                        boxShadow: selectedBiddingHour === null ? '0 2px 8px rgba(41,98,255,0.35)' : 'none',
+                        transition: 'all 0.2s ease'
+                      }}
                     >
-                      全选 (1-24)
-                    </button>
-                    <button 
-                      onClick={() => setBiddingSelectedHours([9, 10, 11, 12, 17, 18, 19, 20, 21])}
-                      style={{ padding: '4px 10px', fontSize: '12px', borderRadius: '4px', border: '1px solid #d9d9d9', background: '#fff', color: '#131722', cursor: 'pointer' }}
-                    >
-                      高峰 (9-12, 17-21)
-                    </button>
-                    <button 
-                      onClick={() => setBiddingSelectedHours([1, 2, 3, 4, 5, 6, 23, 24])}
-                      style={{ padding: '4px 10px', fontSize: '12px', borderRadius: '4px', border: '1px solid #d9d9d9', background: '#fff', color: '#131722', cursor: 'pointer' }}
-                    >
-                      低谷 (1-6, 23-24)
-                    </button>
-                    <button 
-                      onClick={() => setBiddingSelectedHours([7, 8, 13, 14, 15, 16, 22])}
-                      style={{ padding: '4px 10px', fontSize: '12px', borderRadius: '4px', border: '1px solid #d9d9d9', background: '#fff', color: '#131722', cursor: 'pointer' }}
-                    >
-                      平段 (7-8, 13-16, 22)
-                    </button>
-                    <button 
-                      onClick={() => setBiddingSelectedHours([])}
-                      style={{ padding: '4px 10px', fontSize: '12px', borderRadius: '4px', border: '1px solid #d9d9d9', background: '#fff', color: '#787b86', cursor: 'pointer' }}
-                    >
-                      清空
+                      全部 (1-24时段)
                     </button>
                   </div>
 
-                  {/* Multi-Select Dropdown */}
-                  <Select
-                    mode="multiple"
-                    allowClear
-                    style={{ minWidth: 260, maxWidth: 450 }}
-                    placeholder="选择指定时段..."
-                    value={biddingSelectedHours}
-                    onChange={(vals) => setBiddingSelectedHours(vals.map(Number).sort((a, b) => a - b))}
-                    maxTagCount="responsive"
-                    options={Array.from({ length: 24 }, (_, i) => {
-                      const h = i + 1;
-                      return {
-                        value: h,
-                        label: `${String(h).padStart(2, '0')}:00 时段`
-                      };
-                    })}
-                  />
+                  {/* Dynamic Status text */}
+                  <div style={{ fontSize: '12px', color: '#6b7280' }}>
+                    {selectedBiddingHour === null ? (
+                      <span>当前状态: <b style={{ color: '#2962ff' }}>全部 24 时段独立分布</b> (点击数字胶囊只看该时段，再次点击取消)</span>
+                    ) : (
+                      <span>当前状态: <b style={{ color: HOUR_COLORS_24[selectedBiddingHour - 1] }}>仅显示 {String(selectedBiddingHour).padStart(2, '0')}:00 时段</b> (点击已高亮胶囊取消关重复原)</span>
+                    )}
+                  </div>
                 </div>
 
-                {/* Quick stats indicator */}
-                <div style={{ fontSize: '12px', color: '#787b86' }}>
-                  已选中 <b style={{ color: '#2962ff' }}>{biddingSelectedHours.length}</b> / 24 个时段
+                {/* 24 Hour Capsule Badges Grid */}
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', paddingTop: '2px' }}>
+                  {Array.from({ length: 24 }, (_, i) => {
+                    const h = i + 1;
+                    const isSelected = selectedBiddingHour === h;
+                    const hourColor = HOUR_COLORS_24[i];
+
+                    return (
+                      <button
+                        key={h}
+                        onClick={() => setSelectedBiddingHour(prev => prev === h ? null : h)}
+                        title={isSelected ? `点击取消选中，还原显示全部24个时段` : `点击仅显示 ${String(h).padStart(2, '0')}:00 时段`}
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          padding: '4px 12px',
+                          borderRadius: '20px',
+                          fontSize: '12px',
+                          fontWeight: isSelected ? 700 : 500,
+                          border: isSelected ? `2px solid ${hourColor}` : '1px solid #e5e7eb',
+                          background: isSelected ? hourColor : '#f9fafb',
+                          color: isSelected ? '#ffffff' : '#374151',
+                          cursor: 'pointer',
+                          boxShadow: isSelected ? `0 3px 10px ${hourColor}66` : '0 1px 2px rgba(0,0,0,0.03)',
+                          transform: isSelected ? 'scale(1.08)' : 'scale(1)',
+                          transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: '50%',
+                            backgroundColor: isSelected ? '#ffffff' : hourColor,
+                            display: 'inline-block'
+                          }}
+                        />
+                        <span>{h}</span>
+                        <span style={{ fontSize: '10px', opacity: isSelected ? 0.9 : 0.6 }}>时</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
               {/* Chart container */}
-              <div style={{ flex: 1, minHeight: 0, background: '#fff', borderRadius: '6px', border: '1px solid #e0e3eb', padding: '8px' }}>
+              <div style={{ flex: 1, minHeight: 0, background: '#fff', borderRadius: '8px', border: '1px solid #e0e3eb', padding: '8px' }}>
                 <ReactECharts 
                   option={buildBiddingChart()} 
                   style={{ height: '100%', width: '100%' }} 
