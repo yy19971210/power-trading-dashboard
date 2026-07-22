@@ -1092,115 +1092,43 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
     };
   };
 
-  const buildStrategyRightCombinedChart = () => {
+  const buildStrategySpreadTrendChart = () => {
     if (!strategySpreadData || strategySpreadData.length === 0) return {};
     const dates = strategySpreadData.map(d => d.date);
     const da = strategySpreadData.map(d => d.daSpread);
     const rt = strategySpreadData.map(d => d.rtSpread);
+    const intervalStep = dates.length > 15 ? Math.floor(dates.length / 10) : 0;
+
+    return {
+      title: { text: `价差趋势对比 (时段 ${strategySpreadPointB} - 时段 ${strategySpreadPointA})`, left: 8, top: 4, textStyle: { color: '#131722', fontSize: 13, fontWeight: 600 } },
+      tooltip: { trigger: 'axis' },
+      legend: { data: ['日前结算价差', '加权交易均价差'], top: 4, right: 10, textStyle: { fontSize: 11 }, icon: 'roundRect', itemWidth: 14, itemHeight: 3 },
+      grid: { top: 36, left: 50, right: 20, bottom: 30, containLabel: true },
+      xAxis: { type: 'category', data: dates, boundaryGap: false, axisLabel: { fontSize: 10, interval: intervalStep, formatter: (val: string) => (val && val.length >= 10 ? val.slice(5) : val) } },
+      yAxis: { type: 'value', name: '元/MWh', splitLine: { lineStyle: { color: '#f0f3fa' } }, axisLabel: { fontSize: 10 } },
+      series: [
+        { name: '日前结算价差', type: 'line', data: da, itemStyle: { color: '#2962ff' }, smooth: true, lineStyle: { width: 2 }, symbol: 'none' },
+        { name: '加权交易均价差', type: 'line', data: rt, itemStyle: { color: '#e91e63' }, smooth: true, lineStyle: { width: 2 }, symbol: 'none' }
+      ]
+    };
+  };
+
+  const buildStrategySpreadSpaceChart = () => {
+    if (!strategySpreadData || strategySpreadData.length === 0) return {};
+    const dates = strategySpreadData.map(d => d.date);
     const spaces = strategySpreadData.map(d => d.space);
     const intervalStep = dates.length > 15 ? Math.floor(dates.length / 10) : 0;
 
     return {
-      title: [
-        { text: `价差趋势对比 (时段 ${strategySpreadPointB} - 时段 ${strategySpreadPointA})`, left: 0, top: 0, textStyle: { color: '#131722', fontSize: 13, fontWeight: 600 } },
-        { text: `套利收益空间 (日前价差 - 加权均价差)`, left: 0, top: '50%', textStyle: { color: '#131722', fontSize: 13, fontWeight: 600 } }
-      ],
-      tooltip: { 
-        trigger: 'axis', 
-        axisPointer: { 
-          type: 'line', 
-          lineStyle: { type: 'dashed', color: '#666', width: 1 } 
-        }
-      },
-      axisPointer: {
-        link: [{ xAxisIndex: 'all' }]
-      },
-      legend: { 
-        data: ['日前结算价差', '加权交易均价差'], 
-        top: 0, 
-        right: 0, 
-        textStyle: { fontSize: 12 } 
-      },
-      grid: [
-        { top: 35, height: '38%', left: 55, right: 15, containLabel: false },
-        { top: '55%', height: '38%', left: 55, right: 15, containLabel: false }
-      ],
-      xAxis: [
-        { 
-          gridIndex: 0,
-          type: 'category', 
-          data: dates, 
-          boundaryGap: true, 
-          axisTick: { alignWithLabel: true },
-          axisLabel: { 
-            fontSize: 10, 
-            interval: intervalStep,
-            formatter: (val: string) => (val && val.length >= 10 ? val.slice(5) : val)
-          } 
-        },
-        { 
-          gridIndex: 1,
-          type: 'category', 
-          data: dates, 
-          boundaryGap: true, 
-          axisTick: { alignWithLabel: true },
-          axisLabel: { 
-            fontSize: 10, 
-            interval: intervalStep,
-            formatter: (val: string) => (val && val.length >= 10 ? val.slice(5) : val)
-          } 
-        }
-      ],
-      yAxis: [
-        { 
-          gridIndex: 0, 
-          type: 'value', 
-          name: '元/MWh', 
-          nameGap: 8, 
-          splitLine: { lineStyle: { color: '#f0f3fa' } }, 
-          axisLabel: { fontSize: 10, width: 40 } 
-        },
-        { 
-          gridIndex: 1, 
-          type: 'value', 
-          name: '元/MWh', 
-          nameGap: 8, 
-          splitLine: { lineStyle: { color: '#f0f3fa' } }, 
-          axisLabel: { fontSize: 10, width: 40 } 
-        }
-      ],
-      series: [
-        { 
-          name: '日前结算价差', 
-          type: 'line', 
-          xAxisIndex: 0,
-          yAxisIndex: 0,
-          data: da, 
-          itemStyle: { color: '#2962ff' }, 
-          smooth: true, 
-          lineStyle: { width: 2 } 
-        },
-        { 
-          name: '加权交易均价差', 
-          type: 'line', 
-          xAxisIndex: 0,
-          yAxisIndex: 0,
-          data: rt, 
-          itemStyle: { color: '#e91e63' }, 
-          smooth: true, 
-          lineStyle: { width: 2 } 
-        },
-        { 
-          name: '套利空间', 
-          type: 'bar', 
-          xAxisIndex: 1,
-          yAxisIndex: 1,
-          data: spaces,
-          itemStyle: {
-            color: (params: any) => params.value > 0 ? '#f23645' : '#089981'
-          }
-        }
-      ]
+      title: { text: '套利收益空间 (日前价差 - 加权均价差)', left: 8, top: 4, textStyle: { color: '#131722', fontSize: 13, fontWeight: 600 } },
+      tooltip: { trigger: 'axis', formatter: (params: any) => `${params[0].name}<br/>套利空间: <b>${Number(params[0].value).toFixed(2)}</b> 元/MWh` },
+      grid: { top: 36, left: 50, right: 20, bottom: 30, containLabel: true },
+      xAxis: { type: 'category', data: dates, boundaryGap: true, axisTick: { alignWithLabel: true }, axisLabel: { fontSize: 10, interval: intervalStep, formatter: (val: string) => (val && val.length >= 10 ? val.slice(5) : val) } },
+      yAxis: { type: 'value', name: '元/MWh', splitLine: { lineStyle: { color: '#f0f3fa' } }, axisLabel: { fontSize: 10 } },
+      series: [{
+        name: '套利空间', type: 'bar', data: spaces,
+        itemStyle: { color: (params: any) => params.value > 0 ? '#f23645' : '#089981' }
+      }]
     };
   };
 
@@ -1900,37 +1828,38 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
         
         {/* ===== PAGE 7: STRATEGY SPREAD ===== */}
         {page === 'page7' && (
-          <div style={{ display: 'flex', height: '100%', padding: '8px', gap: '12px', boxSizing: 'border-box' }}>
-            
+          <div style={{ display: 'flex', height: '100%', padding: '10px', gap: '14px', boxSizing: 'border-box' }}>
+
             {/* LEFT COLUMN: Controls + Heatmap */}
-            <div style={{ width: '35%', flexShrink: 0, height: '100%', display: 'flex', flexDirection: 'column', gap: '8px', background: '#fff', borderRadius: '4px', border: '1px solid #e0e3eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', padding: '12px', boxSizing: 'border-box' }}>
-              <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexShrink: 0, paddingBottom: '8px', borderBottom: '1px solid #f0f3fa' }}>
+            <div style={{ width: '42%', flexShrink: 0, height: '100%', display: 'flex', flexDirection: 'column', gap: '10px', background: '#fff', borderRadius: '6px', border: '1px solid #e0e3eb', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '14px', boxSizing: 'border-box' }}>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexShrink: 0, paddingBottom: '10px', borderBottom: '1px solid #f0f3fa', flexWrap: 'wrap' }}>
                 <span style={{ fontWeight: 600, color: '#131722', fontSize: '13px' }}>选择套利时段对：</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <span style={{ color: '#4b5563', fontSize: '13px' }}>时段A:</span>
-                  <select 
+                  <select
                     value={strategySpreadPointA}
                     onChange={e => setStrategySpreadPointA(Number(e.target.value))}
-                    style={{ padding: '4px 8px', border: '1px solid #e0e3eb', borderRadius: '4px', outline: 'none', fontSize: '13px' }}>
+                    style={{ padding: '4px 10px', border: '1px solid #d0d5dd', borderRadius: '4px', outline: 'none', fontSize: '13px', background: '#fff', cursor: 'pointer' }}>
                     {Array.from({length: 24}, (_, i) => i+1).map(h => <option key={h} value={h}>{h}</option>)}
                   </select>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <span style={{ color: '#4b5563', fontSize: '13px' }}>时段B:</span>
-                  <select 
+                  <select
                     value={strategySpreadPointB}
                     onChange={e => setStrategySpreadPointB(Number(e.target.value))}
-                    style={{ padding: '4px 8px', border: '1px solid #e0e3eb', borderRadius: '4px', outline: 'none', fontSize: '13px' }}>
+                    style={{ padding: '4px 10px', border: '1px solid #d0d5dd', borderRadius: '4px', outline: 'none', fontSize: '13px', background: '#fff', cursor: 'pointer' }}>
                     {Array.from({length: 24}, (_, i) => i+1).map(h => <option key={h} value={h}>{h}</option>)}
                   </select>
                 </div>
+                <span style={{ fontSize: '11px', color: '#9ca3af', marginLeft: '4px' }}>💡 点击热力图也可快速选择</span>
               </div>
 
               <div style={{ flex: 1, minHeight: 0 }}>
-                <ReactECharts 
-                  option={buildStrategyScannerHeatmap()} 
-                  style={{ height: '100%', width: '100%' }} 
-                  notMerge={true} 
+                <ReactECharts
+                  option={buildStrategyScannerHeatmap()}
+                  style={{ height: '100%', width: '100%' }}
+                  notMerge={true}
                   onEvents={{
                     click: (params: any) => {
                       if (params.seriesType === 'heatmap') {
@@ -1943,9 +1872,19 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
               </div>
             </div>
 
-            {/* RIGHT COLUMN: Dual Grid Combined Chart */}
-            <div style={{ flex: 1, minWidth: 0, height: '100%', background: '#fff', borderRadius: '4px', border: '1px solid #e0e3eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', padding: '12px', boxSizing: 'border-box' }}>
-              <ReactECharts option={buildStrategyRightCombinedChart()} style={{ height: '100%', width: '100%' }} notMerge={true} />
+            {/* RIGHT COLUMN: Two separate charts stacked vertically */}
+            <div style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column', gap: '14px', boxSizing: 'border-box' }}>
+
+              {/* TOP RIGHT: Spread Trend Chart */}
+              <div style={{ flex: 1, minHeight: 0, background: '#fff', borderRadius: '6px', border: '1px solid #e0e3eb', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '14px', boxSizing: 'border-box' }}>
+                <ReactECharts option={buildStrategySpreadTrendChart()} style={{ height: '100%', width: '100%' }} notMerge={true} />
+              </div>
+
+              {/* BOTTOM RIGHT: Arbitrage Space Chart */}
+              <div style={{ flex: 1, minHeight: 0, background: '#fff', borderRadius: '6px', border: '1px solid #e0e3eb', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '14px', boxSizing: 'border-box' }}>
+                <ReactECharts option={buildStrategySpreadSpaceChart()} style={{ height: '100%', width: '100%' }} notMerge={true} />
+              </div>
+
             </div>
 
           </div>
