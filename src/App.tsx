@@ -1069,7 +1069,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
           return `时段 A: ${a}<br/>时段 B: ${b}<br/>平均套利空间: <b>${space}</b> 元/MWh`;
         }
       },
-      grid: { top: 26, right: 32, left: 32, bottom: 32, containLabel: true },
+      grid: { top: 28, right: 36, left: 36, bottom: 32, containLabel: true },
       xAxis: {
         type: 'category', data: periods, name: '时段A (买入)',
         nameLocation: 'center', nameGap: 18, nameTextStyle: { color: '#787b86', fontSize: 10 },
@@ -1903,8 +1903,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
                 <span style={{ fontSize: '10px', color: '#9ca3af' }}>💡 点击热力图也可选择</span>
               </div>
 
-              <div style={{ flex: 1, minHeight: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                <div style={{ aspectRatio: '1 / 1', width: '100%', maxHeight: '100%' }}>
+              <div style={{ flex: 1, minHeight: 0 }}>
                 <ReactECharts
                   option={buildStrategyScannerHeatmap()}
                   style={{ height: '100%', width: '100%' }}
@@ -1918,7 +1917,6 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
                     }
                   }}
                 />
-                </div>
               </div>
             </div>
 
