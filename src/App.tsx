@@ -1903,7 +1903,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
           <div style={{ display: 'flex', height: '100%', padding: '8px', gap: '12px', boxSizing: 'border-box' }}>
             
             {/* LEFT COLUMN: Controls + Heatmap */}
-            <div style={{ width: '42%', flexShrink: 0, height: '100%', display: 'flex', flexDirection: 'column', gap: '8px', background: '#fff', borderRadius: '4px', border: '1px solid #e0e3eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', padding: '12px', boxSizing: 'border-box' }}>
+            <div style={{ width: '35%', flexShrink: 0, height: '100%', display: 'flex', flexDirection: 'column', gap: '8px', background: '#fff', borderRadius: '4px', border: '1px solid #e0e3eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', padding: '12px', boxSizing: 'border-box' }}>
               <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexShrink: 0, paddingBottom: '8px', borderBottom: '1px solid #f0f3fa' }}>
                 <span style={{ fontWeight: 600, color: '#131722', fontSize: '13px' }}>选择套利时段对：</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -1926,22 +1926,20 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
                 </div>
               </div>
 
-              <div style={{ flex: 1, display: 'flex', justifyContent: 'flex-start', alignItems: 'center', minHeight: 0 }}>
-                <div style={{ height: '100%', aspectRatio: '1 / 1', maxHeight: '100%' }}>
-                  <ReactECharts 
-                    option={buildStrategyScannerHeatmap()} 
-                    style={{ height: '100%', width: '100%' }} 
-                    notMerge={true} 
-                    onEvents={{
-                      click: (params: any) => {
-                        if (params.seriesType === 'heatmap') {
-                          setStrategySpreadPointA(params.data[0] + 1);
-                          setStrategySpreadPointB(params.data[1] + 1);
-                        }
+              <div style={{ flex: 1, minHeight: 0 }}>
+                <ReactECharts 
+                  option={buildStrategyScannerHeatmap()} 
+                  style={{ height: '100%', width: '100%' }} 
+                  notMerge={true} 
+                  onEvents={{
+                    click: (params: any) => {
+                      if (params.seriesType === 'heatmap') {
+                        setStrategySpreadPointA(params.data[0] + 1);
+                        setStrategySpreadPointB(params.data[1] + 1);
                       }
-                    }}
-                  />
-                </div>
+                    }
+                  }}
+                />
               </div>
             </div>
 
