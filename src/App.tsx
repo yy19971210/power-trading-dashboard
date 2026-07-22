@@ -688,6 +688,9 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
       return selectedBiddingHours.includes(h);
     };
 
+    let globalMinX = Infinity, globalMaxX = -Infinity;
+    let globalMinY = Infinity, globalMaxY = -Infinity;
+
     filtered.forEach(r => {
       const bs = r.bidding_space;
       const price = r.price_dayahead;
@@ -695,6 +698,11 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
       if (bs != null && price != null && isFinite(bs) && isFinite(price) && period != null && period >= 1 && period <= 24) {
         const timeLabel = `${r.date} ${String(period).padStart(2, '0')}:00`;
         hourSeriesMap[period].push([bs, price, timeLabel, period]);
+
+        if (bs < globalMinX) globalMinX = bs;
+        if (bs > globalMaxX) globalMaxX = bs;
+        if (price < globalMinY) globalMinY = price;
+        if (price > globalMaxY) globalMaxY = price;
 
         if (isHourVisible(period)) {
           allPairs.push([bs, price, timeLabel]);
@@ -725,7 +733,9 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
         symbolSize: isSelected ? 8 : 6,
         itemStyle: {
           color: color,
-          opacity: isSelected ? 0.9 : 0.75
+          opacity: isSelected ? 0.9 : 0.75,
+          borderColor: 'transparent',
+          borderWidth: 0
         },
         emphasis: {
           itemStyle: {
@@ -746,6 +756,20 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
         lineStyle: { color: '#131722', width: 2, type: 'dashed' },
         tooltip: { show: false },
         z: 10
+      });
+    }
+
+    if (globalMinX !== Infinity) {
+      seriesList.push({
+        name: 'global-bounds',
+        type: 'scatter',
+        data: [[globalMinX, globalMinY], [globalMaxX, globalMaxY]],
+        symbolSize: 0,
+        itemStyle: { opacity: 0 },
+        tooltip: { show: false },
+        hoverAnimation: false,
+        legendHoverLink: false,
+        z: -1
       });
     }
 
@@ -786,8 +810,8 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
       visualMap: !colorByHour ? {
         type: 'continuous',
         dimension: 1,
-        min: allPairs.length > 0 ? allPairs.reduce((min, p) => p[1] < min ? p[1] : min, allPairs[0][1]) : 0,
-        max: allPairs.length > 0 ? allPairs.reduce((max, p) => p[1] > max ? p[1] : max, allPairs[0][1]) : 500,
+        min: globalMinY !== Infinity ? globalMinY : 0,
+        max: globalMaxY !== -Infinity ? globalMaxY : 500,
         calculable: true,
         orient: 'vertical',
         right: 10,
