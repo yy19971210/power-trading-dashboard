@@ -1059,7 +1059,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
     const maxAbs = Math.max(Math.abs(maxVal), Math.abs(minVal));
 
     return {
-      title: { text: '全时段平均套利空间矩阵 (日前 − 现货)', left: 4, top: 2, textStyle: { color: '#131722', fontSize: 12, fontWeight: 600 } },
+      title: { text: '全时段平均套利空间矩阵 (日前 − 现货)', left: 0, top: 2, textStyle: { color: '#131722', fontSize: 12, fontWeight: 600 } },
       tooltip: {
         position: 'top',
         formatter: (p: any) => {
@@ -1069,7 +1069,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
           return `时段 A: ${a}<br/>时段 B: ${b}<br/>平均套利空间: <b>${space}</b> 元/MWh`;
         }
       },
-      grid: { top: 28, right: 36, left: 36, bottom: 32, containLabel: true },
+      grid: { top: 28, right: 44, left: 8, bottom: 32, containLabel: true },
       xAxis: {
         type: 'category', data: periods, name: '时段A (买入)',
         nameLocation: 'center', nameGap: 18, nameTextStyle: { color: '#787b86', fontSize: 10 },
