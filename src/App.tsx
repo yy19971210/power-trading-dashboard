@@ -795,14 +795,12 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
         textStyle: { color: '#131722', fontSize: 12 },
         extraCssText: 'box-shadow: 0 4px 12px rgba(0,0,0,0.15); border-radius: 6px; padding: 10px;'
       },
-      grid: { left: 16, right: !colorByHour ? 60 : 30, top: 60, bottom: 40, containLabel: true },
+      grid: { left: 16, right: !colorByHour ? 60 : 30, top: 40, bottom: 40, containLabel: true },
       title: {
-        text: '日前竞价空间 vs 日前价格 散点分布图',
-        subtext: `范围: ${minDate} 至 ${maxDate} | N = ${allPairs.length} | R² = ${reg.r2.toFixed(4)} | y = ${reg.slope.toFixed(6)}x + ${reg.intercept.toFixed(2)}`,
+        text: `日前竞价空间 vs 日前价格 散点分布图   |   范围: ${minDate} 至 ${maxDate} | N = ${allPairs.length} | R² = ${reg.r2.toFixed(4)} | y = ${reg.slope.toFixed(6)}x + ${reg.intercept.toFixed(2)}`,
         left: 12, 
-        top: 4,
-        textStyle: { color: '#131722', fontSize: 14, fontWeight: 600 },
-        subtextStyle: { color: '#4b5563', fontSize: 11, lineHeight: 16 }
+        top: 8,
+        textStyle: { color: '#131722', fontSize: 13, fontWeight: 600 }
       },
       visualMap: !colorByHour ? {
         type: 'continuous',
@@ -1744,15 +1742,22 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
 
           {/* ===== PAGE 3: BIDDING SPACE ===== */}
           {page === 'page3' && (
-            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '8px', gap: '8px', boxSizing: 'border-box' }}>
-              {/* Header Pill Control Toolbar */}
+            <div style={{ display: 'flex', flexDirection: 'row', height: '100%', padding: '8px', gap: '12px', boxSizing: 'border-box' }}>
+              {/* Sidebar Pill Control Toolbar */}
               <div style={{ 
                 display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                padding: '12px 16px',
-                background: '#fff'
+                flexDirection: 'column',
+                width: '200px',
+                flexShrink: 0,
+                gap: '12px',
+                padding: '16px',
+                background: '#fff',
+                borderRadius: '8px',
+                border: '1px solid #e0e3eb',
+                boxSizing: 'border-box',
+                overflowY: 'auto'
               }}>
+                <div style={{ fontSize: '14px', fontWeight: 600, color: '#131722', marginBottom: '4px' }}>时段筛选</div>
                 {/* "All" Pill */}
                 <button
                   onClick={() => { setSelectedBiddingHours([]); setLastClickedHour(null); }}
@@ -1772,7 +1777,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
                 </button>
 
                 {/* 24 Hour Circular Pills Grid */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
                   {Array.from({ length: 24 }, (_, i) => {
                     const h = i + 1;
                     const isSelected = selectedBiddingHours.includes(h);
@@ -1805,14 +1810,15 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
                   })}
                 </div>
 
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#131722', cursor: 'pointer', marginLeft: '16px' }}>
+                <div style={{ height: '1px', background: '#e0e3eb', margin: '4px 0' }} />
+                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#131722', cursor: 'pointer' }}>
                   <input type="checkbox" checked={colorByHour} onChange={e => setColorByHour(e.target.checked)} style={{ cursor: 'pointer' }} />
                   分时段着色
                 </label>
               </div>
 
               {/* Chart container */}
-              <div style={{ flex: 1, minHeight: 0, background: '#fff', borderRadius: '8px', border: '1px solid #e0e3eb', padding: '8px' }}>
+              <div style={{ flex: 1, minWidth: 0, background: '#fff', borderRadius: '8px', border: '1px solid #e0e3eb', padding: '8px' }}>
                 <ReactECharts 
                   option={buildBiddingChart()} 
                   style={{ height: '100%', width: '100%' }} 
