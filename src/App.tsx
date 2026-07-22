@@ -41,6 +41,22 @@ const METRICS: { [k: string]: { label: string; color: string; unit: string } } =
   bidding_space:    { label: '竞价空间', color: '#1e40af', unit: 'MW' },
 };
 
+// Page 2: two-day weather comparison config
+const WEATHER_COMPARE_ITEMS = [
+  { key: 'wind_speed',      label: '风速',     unit: 'm/s',  color: '#26a69a' },
+  { key: 'solar_radiation', label: '短波辐射', unit: 'W/m²', color: '#ff9800' },
+  { key: 'temperature',     label: '温度',     unit: '°C',   color: '#f23645' },
+  { key: 'rainfall',        label: '降水',     unit: 'mm',   color: '#2962ff' },
+];
+
+// Page 2: time-series / scatter metric config keyed by weatherMetric
+const WEATHER_TS_CFG: { [k: string]: { ts: [string, string, string, string, string]; scatter: [string, string, string, string, string] } } = {
+  wind:  { ts: ['wind_speed', 'wind', '风速', '风电出力', '#089981'], scatter: ['wind_speed', 'wind', '风速 (m/s)', '风电出力 (MW)', '#089981'] },
+  solar: { ts: ['solar_radiation', 'solar', '辐射', '光伏出力', '#f59e0b'], scatter: ['solar_radiation', 'solar', '短波辐射 (W/m²)', '光伏出力 (MW)', '#f59e0b'] },
+  load:  { ts: ['temperature', 'load', '温度', '系统负荷', '#f23645'], scatter: ['temperature', 'load', '温度 (°C)', '系统负荷 (MW)', '#f23645'] },
+  hydro: { ts: ['rainfall', 'hydro', '降水', '水电出力', '#2962ff'], scatter: ['rainfall', 'hydro', '降水 (mm)', '水电出力 (MW)', '#2962ff'] },
+};
+
 const HOUR_COLORS_24 = [
   '#2563eb', // 01:00 宝蓝
   '#0284c7', // 02:00 浅蓝
@@ -130,6 +146,11 @@ function App() {
 const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   const [weatherMetric, setWeatherMetric] = useState<'wind'|'solar'|'load'|'hydro'>('wind');
+  // Page 2: two-day comparison state
+  const [page2Tab, setPage2Tab] = useState<'compare' | 'correlation' | 'timeseries'>('compare');
+  const [compareDateA, setCompareDateA] = useState<string>('');
+  const [compareDateB, setCompareDateB] = useState<string>('');
+  const [comparePriceType, setComparePriceType] = useState<'price_dayahead' | 'price_realtime'>('price_dayahead');
   const [page, setPage] = useState<PageId>('page1');
   const [activeView, setActiveView] = useState<'overview' | 'detail'>('overview');
   
@@ -233,6 +254,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
 
   useEffect(() => {
     echarts.connect('sync-overview');
+    echarts.connect('weather-compare');
   }, []);
 
   useEffect(() => {
@@ -649,6 +671,93 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
     };
   };
 
+  // -- Page 2: Two-day weather comparison helpers --
+  const hourlyByDate = useMemo(() => {
+    const m: Record<string, (DataRecord | null)[]> = {};
+    if (!data) return m;
+    data.hourly.forEach(r => {
+      if (!r.date || r.period == null) return;
+      if (!m[r.date]) m[r.date] = new Array(24).fill(null);
+      if (r.period >= 1 && r.period <= 24) m[r.date][r.period - 1] = r;
+    });
+    return m;
+  }, [data]);
+
+  const getDayValues = (date: string, key: string): (number | null)[] => {
+    const recs = hourlyByDate[date];
+    const arr: (number | null)[] = new Array(24).fill(null);
+    if (!recs) return arr;
+    for (let i = 0; i < 24; i++) {
+      const v = recs[i] ? (recs[i] as any)[key] : null;
+      arr[i] = v != null ? v : null;
+    }
+    return arr;
+  };
+
+  const dayMean = (vals: (number | null)[]): number | null => {
+    const nums = vals.filter((v): v is number => v != null);
+    return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null;
+  };
+
+  // Effective comparison dates: default A = selected date (or data end), B = day before A
+  const cmpDateA = compareDateA || selectedDate || data?.meta.date_range.end || '';
+  const cmpDateB = compareDateB || (cmpDateA ? dayjs(cmpDateA).subtract(1, 'day').format('YYYY-MM-DD') : '');
+
+  const buildDayCompareChart = (key: string, unit: string, color: string, dateA: string, dateB: string) => {
+    const hours = Array.from({ length: 24 }, (_, i) => String(i + 1));
+    const a = getDayValues(dateA, key);
+    const b = getDayValues(dateB, key);
+    return {
+      tooltip: {
+        trigger: 'axis',
+        backgroundColor: 'rgba(19, 23, 34, 0.92)', borderWidth: 0,
+        textStyle: { color: '#fff', fontSize: 12 },
+        valueFormatter: (v: any) => (v == null ? '-' : `${Number(v).toFixed(1)} ${unit}`)
+      },
+      legend: { data: [dateA, dateB], top: 0, right: 0, textStyle: { fontSize: 10, color: '#4b5563' }, itemWidth: 14, itemHeight: 3, icon: 'roundRect' },
+      grid: { left: 42, right: 12, top: 24, bottom: 20 },
+      xAxis: { type: 'category', data: hours, axisLabel: { fontSize: 9, interval: 3, color: '#787b86' }, axisLine: { lineStyle: { color: '#e0e3eb' } }, axisTick: { show: false } },
+      yAxis: { type: 'value', scale: true, axisLabel: { fontSize: 9, color: '#787b86' }, splitLine: { lineStyle: { color: '#f0f3fa' } } },
+      series: [
+        { name: dateA, type: 'line', data: a, symbol: 'none', lineStyle: { width: 2, color }, itemStyle: { color } },
+        { name: dateB, type: 'line', data: b, symbol: 'none', lineStyle: { width: 1.5, color: '#94a3b8', type: 'dashed' }, itemStyle: { color: '#94a3b8' } }
+      ]
+    };
+  };
+
+  const buildDayPriceCompareChart = (dateA: string, dateB: string, priceKey: 'price_dayahead' | 'price_realtime') => {
+    return buildDayCompareChart(priceKey, '元/MWh', priceKey === 'price_dayahead' ? '#e040fb' : '#ff6d00', dateA, dateB);
+  };
+
+  const renderWeatherCompareCard = (item: { key: string; label: string; unit: string; color: string }) => {
+    const ma = dayMean(getDayValues(cmpDateA, item.key));
+    const mb = dayMean(getDayValues(cmpDateB, item.key));
+    const delta = ma != null && mb != null ? ma - mb : null;
+    return (
+      <div key={item.key} style={{ background: '#fff', borderRadius: '10px', border: '1px solid #e0e3eb', boxShadow: '0 2px 8px rgba(19,23,34,0.05)', padding: '10px 12px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexShrink: 0 }}>
+          <span style={{ fontSize: '13px', fontWeight: 600, color: '#131722' }}>
+            <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: item.color, marginRight: 6 }} />
+            {item.label} <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 400 }}>{item.unit}</span>
+          </span>
+          <span style={{ fontSize: '11px', color: '#787b86' }}>
+            A均 <b style={{ color: '#131722' }}>{ma != null ? ma.toFixed(1) : '-'}</b>
+            {' · '}B均 <b style={{ color: '#131722' }}>{mb != null ? mb.toFixed(1) : '-'}</b>
+            {' · '}Δ <b style={{ color: delta != null && delta >= 0 ? '#f23645' : '#089981' }}>{delta != null ? (delta >= 0 ? '+' : '') + delta.toFixed(1) : '-'}</b>
+          </span>
+        </div>
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <ReactECharts
+            option={buildDayCompareChart(item.key, item.unit, item.color, cmpDateA, cmpDateB)}
+            style={{ height: '100%', width: '100%' }}
+            notMerge
+            onChartReady={(c: any) => { c.group = 'weather-compare'; }}
+          />
+        </div>
+      </div>
+    );
+  };
+
   // -- Page 3: Bidding Space vs Price --
   const buildBiddingChart = () => {
     if (!data || !data.hourly || data.hourly.length === 0) return {};
@@ -1059,36 +1168,80 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
     const maxAbs = Math.max(Math.abs(maxVal), Math.abs(minVal));
 
     return {
-      title: { text: '全时段平均套利空间矩阵 (日前 - 现货)', left: 0, top: 0, textStyle: { color: '#131722', fontSize: 13, fontWeight: 600 } },
+      title: {
+        text: '全时段平均套利空间矩阵 (日前 - 现货)',
+        left: 4,
+        top: 0,
+        textStyle: { color: '#131722', fontSize: 16, fontWeight: 700 }
+      },
       tooltip: {
         position: 'top',
+        backgroundColor: 'rgba(19, 23, 34, 0.92)',
+        borderWidth: 0,
+        textStyle: { color: '#fff', fontSize: 12 },
         formatter: (p: any) => {
           const a = p.value[0] + 1;
           const b = p.value[1] + 1;
           const space = p.value[2].toFixed(2);
-          return `时段 A: ${a}<br/>时段 B: ${b}<br/>平均套利空间: <b>${space}</b> 元/MWh`;
+          const color = p.value[2] >= 0 ? '#ff8a93' : '#5adbb5';
+          return `<div style="font-weight:600;margin-bottom:4px;">时段 A: ${a} &nbsp;→&nbsp; 时段 B: ${b}</div>` +
+                 `平均套利空间: <b style="color:${color}">${space}</b> 元/MWh`;
         }
       },
-      grid: { height: '80%', top: 35, right: 45, left: 35, bottom: 35 },
-      xAxis: { type: 'category', data: periods, name: '时段A', splitArea: { show: true }, axisLabel: { fontSize: 10, interval: 0 } },
-      yAxis: { type: 'category', data: periods, name: '时段B', splitArea: { show: true }, axisLabel: { fontSize: 10, interval: 0 } },
+      grid: { top: 34, right: 42, left: 46, bottom: 42 },
+      xAxis: {
+        type: 'category', data: periods, name: '时段A',
+        nameLocation: 'middle', nameGap: 26,
+        nameTextStyle: { color: '#787b86', fontSize: 12, fontWeight: 600 },
+        splitArea: { show: false },
+        axisLine: { lineStyle: { color: '#d0d5dd' } },
+        axisTick: { show: false },
+        axisLabel: { fontSize: 10, interval: 0, color: '#4b5563', hideOverlap: false }
+      },
+      yAxis: {
+        type: 'category', data: periods, name: '时段B',
+        nameLocation: 'middle', nameGap: 28,
+        nameTextStyle: { color: '#787b86', fontSize: 12, fontWeight: 600 },
+        splitArea: { show: false },
+        axisLine: { lineStyle: { color: '#d0d5dd' } },
+        axisTick: { show: false },
+        axisLabel: { fontSize: 10, interval: 0, color: '#4b5563' }
+      },
       visualMap: {
         min: -maxAbs,
         max: maxAbs,
         calculable: true,
         orient: 'vertical',
-        right: 0,
+        right: 2,
         top: 'center',
-        itemWidth: 10,
-        inRange: { color: ['#089981', '#ffffff', '#f23645'] }
+        itemWidth: 14,
+        itemHeight: 160,
+        precision: 0,
+        textStyle: { color: '#4b5563', fontSize: 11 },
+        inRange: { color: ['#0a8a6d', '#5cc9a7', '#f7f8fa', '#f88d97', '#e5263b'] }
       },
-      series: [{
-        name: '套利空间',
-        type: 'heatmap',
-        data: strategyScannerData,
-        label: { show: false },
-        emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0, 0, 0, 0.5)' } }
-      }]
+      series: [
+        {
+          name: '套利空间',
+          type: 'heatmap',
+          data: strategyScannerData,
+          label: { show: false },
+          itemStyle: { borderColor: '#ffffff', borderWidth: 1.5 },
+          emphasis: {
+            itemStyle: { shadowBlur: 12, shadowColor: 'rgba(0, 0, 0, 0.45)', borderColor: '#131722', borderWidth: 1.5 },
+            scaleSize: 4
+          }
+        },
+        {
+          name: '当前选中',
+          type: 'scatter',
+          data: [[strategySpreadPointA - 1, strategySpreadPointB - 1]],
+          symbolSize: 16,
+          itemStyle: { color: 'rgba(41, 98, 255, 0.12)', borderColor: '#2962ff', borderWidth: 2.5 },
+          silent: true,
+          z: 3
+        }
+      ]
     };
   };
 
@@ -1098,12 +1251,12 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
     const da = strategySpreadData.map(d => d.daSpread);
     const rt = strategySpreadData.map(d => d.rtSpread);
     const spaces = strategySpreadData.map(d => d.space);
-    const intervalStep = dates.length > 15 ? Math.floor(dates.length / 10) : 0;
+    const intervalStep = dates.length > 12 ? Math.floor(dates.length / 6) : 0;
 
     return {
       title: [
-        { text: `价差趋势对比 (时段 ${strategySpreadPointB} - 时段 ${strategySpreadPointA})`, left: 8, top: 4, textStyle: { color: '#131722', fontSize: 13, fontWeight: 600 } },
-        { text: '套利收益空间 (日前价差 - 加权均价差)', left: 8, top: '50%', textStyle: { color: '#131722', fontSize: 13, fontWeight: 600 } }
+        { text: `价差趋势 (时段${strategySpreadPointB} - 时段${strategySpreadPointA})`, left: 8, top: 4, textStyle: { color: '#131722', fontSize: 12, fontWeight: 600 } },
+        { text: '套利收益空间 (日前价差 - 加权均价差)', left: 8, top: '50%', textStyle: { color: '#131722', fontSize: 12, fontWeight: 600 } }
       ],
       tooltip: {
         trigger: 'axis',
@@ -1152,12 +1305,12 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
         { gridIndex: 1, type: 'category', data: dates, boundaryGap: true, axisTick: { alignWithLabel: true }, axisLabel: { fontSize: 10, interval: intervalStep, formatter: (val: string) => (val && val.length >= 10 ? val.slice(5) : val) } }
       ],
       yAxis: [
-        { gridIndex: 0, type: 'value', name: '元/MWh', nameGap: 35, nameTextStyle: { color: '#787b86', fontSize: 11 }, splitLine: { lineStyle: { color: '#f0f3fa' } }, axisLabel: { fontSize: 10 } },
-        { gridIndex: 1, type: 'value', name: '元/MWh', nameGap: 35, nameTextStyle: { color: '#787b86', fontSize: 11 }, splitLine: { lineStyle: { color: '#f0f3fa' } }, axisLabel: { fontSize: 10 } }
+        { gridIndex: 0, type: 'value', name: '元/MWh', nameGap: 8, nameTextStyle: { color: '#787b86', fontSize: 10, align: 'left' }, splitLine: { lineStyle: { color: '#f0f3fa' } }, axisLabel: { fontSize: 10 } },
+        { gridIndex: 1, type: 'value', name: '元/MWh', nameGap: 8, nameTextStyle: { color: '#787b86', fontSize: 10, align: 'left' }, splitLine: { lineStyle: { color: '#f0f3fa' } }, axisLabel: { fontSize: 10 } }
       ],
       series: [
-        { name: '日前结算价差', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: da, itemStyle: { color: '#2962ff' }, smooth: true, lineStyle: { width: 2 }, symbol: 'none' },
-        { name: '加权交易均价差', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: rt, itemStyle: { color: '#e91e63' }, smooth: true, lineStyle: { width: 2 }, symbol: 'none' },
+        { name: '日前结算价差', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: da, itemStyle: { color: '#2962ff' }, lineStyle: { width: 2 }, symbol: 'none' },
+        { name: '加权交易均价差', type: 'line', xAxisIndex: 0, yAxisIndex: 0, data: rt, itemStyle: { color: '#e91e63' }, lineStyle: { width: 2 }, symbol: 'none' },
         { name: '套利空间', type: 'bar', xAxisIndex: 1, yAxisIndex: 1, data: spaces, itemStyle: { color: (params: any) => params.value > 0 ? '#f23645' : '#089981' } }
       ]
     };
@@ -1175,34 +1328,79 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
     const maxAbs = Math.max(Math.abs(maxVal), Math.abs(minVal));
 
     return {
-      title: { text: '统一结算点日前价格(结算) 24时段套利均价差热力图', left: 8, top: 0, textStyle: { color: '#131722', fontSize: 14 } },
+      title: {
+        text: '统一结算点日前价格(结算) 24时段套利均价差热力图',
+        left: 4,
+        top: 0,
+        textStyle: { color: '#131722', fontSize: 16, fontWeight: 700 }
+      },
       tooltip: {
         position: 'top',
+        backgroundColor: 'rgba(19, 23, 34, 0.92)',
+        borderWidth: 0,
+        textStyle: { color: '#fff', fontSize: 12 },
         formatter: (p: any) => {
           const buy = p.value[0] + 1;
           const sell = p.value[1] + 1;
           const spread = p.value[2].toFixed(2);
-          return `买入: ${buy}:00<br/>卖出: ${sell}:00<br/>均价差: <b>${spread}</b> 元`;
+          const color = p.value[2] >= 0 ? '#ff8a93' : '#5adbb5';
+          return `<div style="font-weight:600;margin-bottom:4px;">买入: ${buy}:00 &nbsp;→&nbsp; 卖出: ${sell}:00</div>` +
+                 `均价差: <b style="color:${color}">${spread}</b> 元`;
         }
       },
-      grid: { height: '80%', top: 30, right: 60, left: 60 },
-      xAxis: { type: 'category', data: hours, name: '买入时段', splitArea: { show: true }, axisLabel: { fontSize: 10, interval: 0 } },
-      yAxis: { type: 'category', data: hours, name: '卖出时段', splitArea: { show: true }, axisLabel: { fontSize: 10, interval: 0 } },
+      grid: { top: 34, right: 42, left: 46, bottom: 42 },
+      xAxis: {
+        type: 'category', data: hours, name: '买入时段',
+        nameLocation: 'middle', nameGap: 26,
+        nameTextStyle: { color: '#787b86', fontSize: 12, fontWeight: 600 },
+        splitArea: { show: false },
+        axisLine: { lineStyle: { color: '#d0d5dd' } },
+        axisTick: { show: false },
+        axisLabel: { fontSize: 10, interval: 0, color: '#4b5563', hideOverlap: false }
+      },
+      yAxis: {
+        type: 'category', data: hours, name: '卖出时段',
+        nameLocation: 'middle', nameGap: 28,
+        nameTextStyle: { color: '#787b86', fontSize: 12, fontWeight: 600 },
+        splitArea: { show: false },
+        axisLine: { lineStyle: { color: '#d0d5dd' } },
+        axisTick: { show: false },
+        axisLabel: { fontSize: 10, interval: 0, color: '#4b5563' }
+      },
       visualMap: {
         min: -maxAbs,
         max: maxAbs,
         calculable: true,
         orient: 'vertical',
-        right: 0,
+        right: 2,
         top: 'center',
-        inRange: { color: ['#089981', '#ffffff', '#f23645'] }
+        itemWidth: 14,
+        itemHeight: 160,
+        precision: 0,
+        textStyle: { color: '#4b5563', fontSize: 11 },
+        inRange: { color: ['#0a8a6d', '#5cc9a7', '#f7f8fa', '#f88d97', '#e5263b'] }
       },
-      series: [{
-        type: 'heatmap',
-        data: heatmapData,
-        label: { show: false },
-        emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0, 0, 0, 0.5)' } }
-      }]
+      series: [
+        {
+          type: 'heatmap',
+          data: heatmapData,
+          label: { show: false },
+          itemStyle: { borderColor: '#ffffff', borderWidth: 1.5 },
+          emphasis: {
+            itemStyle: { shadowBlur: 12, shadowColor: 'rgba(0, 0, 0, 0.45)', borderColor: '#131722', borderWidth: 1.5 },
+            scaleSize: 4
+          }
+        },
+        {
+          name: '当前选中',
+          type: 'scatter',
+          data: [[selectedArbitragePair[0] - 1, selectedArbitragePair[1] - 1]],
+          symbolSize: 16,
+          itemStyle: { color: 'rgba(41, 98, 255, 0.12)', borderColor: '#2962ff', borderWidth: 2.5 },
+          silent: true,
+          z: 3
+        }
+      ]
     };
   };
 
@@ -1626,8 +1824,8 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
           <button className="tv-left-btn">🔒</button>
         </div>
 
-        {/* CENTER CHART AREA */}
-        <div className="tv-chart-area">
+        {/* CENTER CHART AREA (hidden on page7 — the strategy page renders full-width below) */}
+        <div className="tv-chart-area" style={page === 'page7' ? { display: 'none' } : undefined}>
           {/* ===== PAGE 1: OVERVIEW ===== */}
           {page === 'page1' && activeView === 'overview' && (
             <>
@@ -1656,46 +1854,137 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
             </>
           )}
 
-          {/* ===== PAGE 2: SCATTER / CORRELATION ===== */}
+          {/* ===== PAGE 2: WEATHER — TWO-DAY COMPARE / CORRELATION ===== */}
           {page === 'page2' && (
-            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '4px' }}>
-              <div style={{ display: 'flex', borderBottom: '1px solid #e0e3eb', marginBottom: '4px' }}>
-                {[
-                  { id: 'wind', label: '风电 vs 风速' },
-                  { id: 'solar', label: '光伏 vs 辐射' },
-                  { id: 'load', label: '负荷 vs 温度' },
-                  { id: 'hydro', label: '水电 vs 降水' },
-                ].map(item => (
-                  <button 
-                    key={item.id}
-                    style={{
-                      padding: '6px 16px', background: 'transparent', border: 'none',
-                      borderBottom: weatherMetric === item.id ? '2px solid #2962ff' : '2px solid transparent',
-                      color: weatherMetric === item.id ? '#2962ff' : '#787b86',
-                      fontWeight: weatherMetric === item.id ? 600 : 400,
-                      cursor: 'pointer', fontSize: '13px'
-                    }}
-                    onClick={() => setWeatherMetric(item.id as any)}
-                  >
-                    {item.label}
-                  </button>
-                ))}
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '10px', gap: '10px', boxSizing: 'border-box', background: '#f5f7fa' }}>
+
+              {/* TOP BAR: title + date pickers + tab switch */}
+              <div style={{ display: 'flex', gap: '14px', alignItems: 'center', flexShrink: 0, flexWrap: 'wrap', background: '#fff', borderRadius: '10px', border: '1px solid #e0e3eb', boxShadow: '0 2px 8px rgba(19,23,34,0.05)', padding: '4px 16px' }}>
+                <span style={{ fontWeight: 700, color: '#131722', fontSize: '15px' }}>气象相关性</span>
+                <div style={{ width: '1px', height: '20px', background: '#e0e3eb' }} />
+                {page2Tab === 'compare' && (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f5f7fa', border: '1px solid #e0e3eb', borderRadius: '8px', padding: '2px 8px' }}>
+                      <span style={{ color: '#787b86', fontSize: '12px' }}>日期A</span>
+                      <input type="date" value={cmpDateA} onChange={e => setCompareDateA(e.target.value)}
+                        style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: '12px', fontWeight: 600, color: '#131722', cursor: 'pointer' }} />
+                    </div>
+                    <span style={{ color: '#9ca3af', fontSize: '12px', fontWeight: 600 }}>VS</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f5f7fa', border: '1px solid #e0e3eb', borderRadius: '8px', padding: '2px 8px' }}>
+                      <span style={{ color: '#787b86', fontSize: '12px' }}>日期B</span>
+                      <input type="date" value={cmpDateB} onChange={e => setCompareDateB(e.target.value)}
+                        style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: '12px', fontWeight: 600, color: '#131722', cursor: 'pointer' }} />
+                    </div>
+                  </>
+                )}
+                {page2Tab !== 'compare' && (
+                  <div style={{ display: 'flex', gap: '2px', background: '#f0f3fa', borderRadius: '8px', padding: '3px' }}>
+                    {([['wind', '风电 vs 风速'], ['solar', '光伏 vs 辐射'], ['load', '负荷 vs 温度'], ['hydro', '水电 vs 降水']] as const).map(([id, label]) => (
+                      <button key={id} onClick={() => setWeatherMetric(id)}
+                        style={{
+                          padding: '4px 12px', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px',
+                          fontWeight: weatherMetric === id ? 600 : 400,
+                          background: weatherMetric === id ? '#fff' : 'transparent',
+                          color: weatherMetric === id ? '#2962ff' : '#787b86',
+                          boxShadow: weatherMetric === id ? '0 1px 3px rgba(19,23,34,0.1)' : 'none'
+                        }}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div style={{ marginLeft: 'auto', display: 'flex', gap: '2px', background: '#f0f3fa', borderRadius: '8px', padding: '2px' }}>
+                  {([['compare', '两日对比'], ['timeseries', '出力与气象时序'], ['correlation', '相关性分析']] as const).map(([id, label]) => (
+                    <button key={id} onClick={() => setPage2Tab(id)}
+                      style={{
+                        padding: '3px 12px', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px',
+                        fontWeight: page2Tab === id ? 600 : 400,
+                        background: page2Tab === id ? '#fff' : 'transparent',
+                        color: page2Tab === id ? '#2962ff' : '#787b86',
+                        boxShadow: page2Tab === id ? '0 1px 3px rgba(19,23,34,0.1)' : 'none'
+                      }}>
+                      {label}
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-                <div style={{ width: '60%', borderRight: '1px solid #e0e3eb', height: '100%' }}>
-                  {weatherMetric === 'wind' && <ReactECharts option={buildWeatherTimeSeriesChart('wind_speed', 'wind', '风速', '风电出力', '#089981')} style={{ height: '100%' }} notMerge />}
-                  {weatherMetric === 'solar' && <ReactECharts option={buildWeatherTimeSeriesChart('solar_radiation', 'solar', '辐射', '光伏出力', '#f59e0b')} style={{ height: '100%' }} notMerge />}
-                  {weatherMetric === 'load' && <ReactECharts option={buildWeatherTimeSeriesChart('temperature', 'load', '温度', '系统负荷', '#f23645')} style={{ height: '100%' }} notMerge />}
-                  {weatherMetric === 'hydro' && <ReactECharts option={buildWeatherTimeSeriesChart('rainfall', 'hydro', '降水', '水电出力', '#2962ff')} style={{ height: '100%' }} notMerge />}
+              {/* TAB 1: TWO-DAY COMPARISON (scrollable — charts get fixed, comfortable heights) */}
+              {page2Tab === 'compare' && (
+                <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+
+                  {/* 2x2 grid: wind / radiation / temperature + price */}
+                  <div style={{ height: '560px', flexShrink: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr', gap: '10px' }}>
+                    {WEATHER_COMPARE_ITEMS.slice(0, 3).map(renderWeatherCompareCard)}
+
+                    {/* Price comparison card (with 日前/实时 toggle) */}
+                    <div style={{ background: '#fff', borderRadius: '10px', border: '1px solid #e0e3eb', boxShadow: '0 2px 8px rgba(19,23,34,0.05)', padding: '10px 12px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+                        <span style={{ fontSize: '13px', fontWeight: 600, color: '#131722' }}>两日价格对比 <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 400 }}>元/MWh</span></span>
+                        <div style={{ display: 'flex', gap: '2px', background: '#f0f3fa', borderRadius: '6px', padding: '2px' }}>
+                          {([['price_dayahead', '日前'], ['price_realtime', '实时']] as const).map(([id, label]) => (
+                            <button key={id} onClick={() => setComparePriceType(id)}
+                              style={{
+                                padding: '2px 10px', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '11px',
+                                fontWeight: comparePriceType === id ? 600 : 400,
+                                background: comparePriceType === id ? '#fff' : 'transparent',
+                                color: comparePriceType === id ? '#2962ff' : '#787b86',
+                                boxShadow: comparePriceType === id ? '0 1px 2px rgba(19,23,34,0.1)' : 'none'
+                              }}>
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div style={{ flex: 1, minHeight: 0 }}>
+                        <ReactECharts option={buildDayPriceCompareChart(cmpDateA, cmpDateB, comparePriceType)} style={{ height: '100%', width: '100%' }} notMerge />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bottom row: rainfall compare + weather/output time series */}
+                  <div style={{ height: '280px', flexShrink: 0, display: 'flex', gap: '10px' }}>
+
+                    {renderWeatherCompareCard(WEATHER_COMPARE_ITEMS[3])}
+
+                    {/* Weather/output time series card */}
+                    <div style={{ flex: 1, minWidth: 0, background: '#fff', borderRadius: '10px', border: '1px solid #e0e3eb', boxShadow: '0 2px 8px rgba(19,23,34,0.05)', padding: '10px 12px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+                        <span style={{ fontSize: '13px', fontWeight: 600, color: '#131722' }}>气象-出力时序</span>
+                        <select value={weatherMetric} onChange={e => setWeatherMetric(e.target.value as any)}
+                          style={{ padding: '3px 8px', border: '1px solid #e0e3eb', borderRadius: '6px', outline: 'none', fontSize: '11px', color: '#4b5563', background: '#f5f7fa', cursor: 'pointer' }}>
+                          <option value="wind">风电 vs 风速</option>
+                          <option value="solar">光伏 vs 辐射</option>
+                          <option value="load">负荷 vs 温度</option>
+                          <option value="hydro">水电 vs 降水</option>
+                        </select>
+                      </div>
+                      <div style={{ flex: 1, minHeight: 0 }}>
+                        <ReactECharts option={buildWeatherTimeSeriesChart(...WEATHER_TS_CFG[weatherMetric].ts)} style={{ height: '100%', width: '100%' }} notMerge />
+                      </div>
+                    </div>
+
+                  </div>
                 </div>
-                <div style={{ width: '40%', height: '100%' }}>
-                  {weatherMetric === 'wind' && <ReactECharts option={buildScatterChart('wind_speed', 'wind', '风速 (m/s)', '风电出力 (MW)', '#089981')} style={{ height: '100%' }} notMerge />}
-                  {weatherMetric === 'solar' && <ReactECharts option={buildScatterChart('solar_radiation', 'solar', '短波辐射 (W/m²)', '光伏出力 (MW)', '#f59e0b')} style={{ height: '100%' }} notMerge />}
-                  {weatherMetric === 'load' && <ReactECharts option={buildScatterChart('temperature', 'load', '温度 (°C)', '系统负荷 (MW)', '#f23645')} style={{ height: '100%' }} notMerge />}
-                  {weatherMetric === 'hydro' && <ReactECharts option={buildScatterChart('rainfall', 'hydro', '降水 (mm)', '水电出力 (MW)', '#2962ff')} style={{ height: '100%' }} notMerge />}
+              )}
+
+              {/* TAB 2: OUTPUT vs WEATHER TIME SERIES (full width) */}
+              {page2Tab === 'timeseries' && (
+                <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ flex: 1, minHeight: 0, background: '#fff', borderRadius: '10px', border: '1px solid #e0e3eb', boxShadow: '0 2px 8px rgba(19,23,34,0.05)', padding: '10px', boxSizing: 'border-box' }}>
+                    <ReactECharts option={buildWeatherTimeSeriesChart(...WEATHER_TS_CFG[weatherMetric].ts)} style={{ height: '100%', width: '100%' }} notMerge />
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {/* TAB 3: CORRELATION (scatter) */}
+              {page2Tab === 'correlation' && (
+                <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ flex: 1, minHeight: 0, background: '#fff', borderRadius: '10px', border: '1px solid #e0e3eb', boxShadow: '0 2px 8px rgba(19,23,34,0.05)', padding: '10px', boxSizing: 'border-box' }}>
+                    <ReactECharts option={buildScatterChart(...WEATHER_TS_CFG[weatherMetric].scatter)} style={{ height: '100%', width: '100%' }} notMerge />
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -1827,13 +2116,14 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
         )}
 
         {page === 'page5' && (
-            <div style={{ display: 'flex', height: '100%', padding: '4px' }}>
-              <div style={{ width: '50%', height: '100%', borderRight: '1px solid #e0e3eb', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                <div style={{ height: '90%', aspectRatio: '1 / 1' }}>
-                  <ReactECharts 
-                    option={buildArbitrageHeatmap()} 
-                    style={{ height: '100%', width: '100%' }} 
-                    notMerge 
+            <div style={{ display: 'flex', height: '100%', padding: '10px', gap: '10px', boxSizing: 'border-box', background: '#f5f7fa' }}>
+              {/* LEFT: Heatmap card — square, card shrinks to fit the square */}
+              <div style={{ flex: '0 0 auto', height: '100%', background: '#fff', borderRadius: '10px', border: '1px solid #e0e3eb', boxShadow: '0 2px 8px rgba(19,23,34,0.05)', padding: '10px', boxSizing: 'border-box' }}>
+                <div style={{ aspectRatio: '1 / 1', height: '100%', maxWidth: '100%' }}>
+                  <ReactECharts
+                    option={buildArbitrageHeatmap()}
+                    style={{ height: '100%', width: '100%' }}
+                    notMerge
                     onEvents={{
                       click: (params: any) => {
                         if (params.seriesType === 'heatmap') {
@@ -1844,12 +2134,13 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
                   />
                 </div>
               </div>
-              <div style={{ width: '50%', height: '100%', display: 'flex', flexDirection: 'column' }}>
-                <div style={{ height: '50%', borderBottom: '1px solid #e0e3eb' }}>
-                  <ReactECharts option={buildArbitrageTrend()} style={{ height: '100%' }} notMerge />
+              {/* RIGHT: trend + histogram stacked cards */}
+              <div style={{ flex: 1, minWidth: 0, height: '100%', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ flex: 1, minHeight: 0, background: '#fff', borderRadius: '10px', border: '1px solid #e0e3eb', boxShadow: '0 2px 8px rgba(19,23,34,0.05)', padding: '10px', boxSizing: 'border-box' }}>
+                  <ReactECharts option={buildArbitrageTrend()} style={{ height: '100%', width: '100%' }} notMerge />
                 </div>
-                <div style={{ height: '50%' }}>
-                  <ReactECharts option={buildArbitrageHistogram()} style={{ height: '100%' }} notMerge />
+                <div style={{ flex: 1, minHeight: 0, background: '#fff', borderRadius: '10px', border: '1px solid #e0e3eb', boxShadow: '0 2px 8px rgba(19,23,34,0.05)', padding: '10px', boxSizing: 'border-box' }}>
+                  <ReactECharts option={buildArbitrageHistogram()} style={{ height: '100%', width: '100%' }} notMerge />
                 </div>
               </div>
             </div>
@@ -1859,35 +2150,40 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
         
         {/* ===== PAGE 7: STRATEGY SPREAD ===== */}
         {page === 'page7' && (
-          <div style={{ display: 'flex', height: '100%', padding: '10px', gap: '14px', boxSizing: 'border-box' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, height: '100%', padding: '10px', gap: '10px', boxSizing: 'border-box', background: '#f5f7fa' }}>
 
-            {/* LEFT COLUMN: Controls + Heatmap */}
-            <div style={{ width: '42%', flexShrink: 0, height: '100%', display: 'flex', flexDirection: 'column', gap: '10px', background: '#fff', borderRadius: '6px', border: '1px solid #e0e3eb', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '14px', boxSizing: 'border-box' }}>
-              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexShrink: 0, paddingBottom: '10px', borderBottom: '1px solid #f0f3fa', flexWrap: 'wrap' }}>
-                <span style={{ fontWeight: 600, color: '#131722', fontSize: '13px' }}>选择套利时段对：</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ color: '#4b5563', fontSize: '13px' }}>时段A:</span>
-                  <select
-                    value={strategySpreadPointA}
-                    onChange={e => setStrategySpreadPointA(Number(e.target.value))}
-                    style={{ padding: '4px 10px', border: '1px solid #d0d5dd', borderRadius: '4px', outline: 'none', fontSize: '13px', background: '#fff', cursor: 'pointer' }}>
-                    {Array.from({length: 24}, (_, i) => i+1).map(h => <option key={h} value={h}>{h}</option>)}
-                  </select>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <span style={{ color: '#4b5563', fontSize: '13px' }}>时段B:</span>
-                  <select
-                    value={strategySpreadPointB}
-                    onChange={e => setStrategySpreadPointB(Number(e.target.value))}
-                    style={{ padding: '4px 10px', border: '1px solid #d0d5dd', borderRadius: '4px', outline: 'none', fontSize: '13px', background: '#fff', cursor: 'pointer' }}>
-                    {Array.from({length: 24}, (_, i) => i+1).map(h => <option key={h} value={h}>{h}</option>)}
-                  </select>
-                </div>
-                <span style={{ fontSize: '11px', color: '#9ca3af', marginLeft: '4px' }}>💡 点击热力图也可快速选择</span>
+            {/* TOP BAR: title + controls */}
+            <div style={{ display: 'flex', gap: '14px', alignItems: 'center', flexShrink: 0, flexWrap: 'wrap', background: '#fff', borderRadius: '10px', border: '1px solid #e0e3eb', boxShadow: '0 2px 8px rgba(19,23,34,0.05)', padding: '8px 16px' }}>
+              <span style={{ fontWeight: 700, color: '#131722', fontSize: '15px' }}>策略：价差套利</span>
+              <div style={{ width: '1px', height: '20px', background: '#e0e3eb' }} />
+              <span style={{ fontWeight: 600, color: '#4b5563', fontSize: '13px' }}>套利时段对</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f5f7fa', border: '1px solid #e0e3eb', borderRadius: '8px', padding: '4px 10px' }}>
+                <span style={{ color: '#787b86', fontSize: '12px' }}>时段A</span>
+                <select
+                  value={strategySpreadPointA}
+                  onChange={e => setStrategySpreadPointA(Number(e.target.value))}
+                  style={{ padding: '3px 6px', border: 'none', borderRadius: '4px', outline: 'none', fontSize: '13px', fontWeight: 600, color: '#131722', background: 'transparent', cursor: 'pointer' }}>
+                  {Array.from({length: 24}, (_, i) => i+1).map(h => <option key={h} value={h}>{h}</option>)}
+                </select>
               </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f5f7fa', border: '1px solid #e0e3eb', borderRadius: '8px', padding: '4px 10px' }}>
+                <span style={{ color: '#787b86', fontSize: '12px' }}>时段B</span>
+                <select
+                  value={strategySpreadPointB}
+                  onChange={e => setStrategySpreadPointB(Number(e.target.value))}
+                  style={{ padding: '3px 6px', border: 'none', borderRadius: '4px', outline: 'none', fontSize: '13px', fontWeight: 600, color: '#131722', background: 'transparent', cursor: 'pointer' }}>
+                  {Array.from({length: 24}, (_, i) => i+1).map(h => <option key={h} value={h}>{h}</option>)}
+                </select>
+              </div>
+              <span style={{ fontSize: '12px', color: '#9ca3af', marginLeft: 'auto' }}>💡 点击热力图色块可快速选择时段组合</span>
+            </div>
 
-              <div style={{ flex: 1, minHeight: 0, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                <div style={{ aspectRatio: '1 / 1', width: '100%', maxHeight: '100%' }}>
+            {/* MAIN AREA: big heatmap + combined chart (trend + profit space, stacked) */}
+            <div style={{ flex: 1, minHeight: 0, display: 'flex', gap: '10px' }}>
+
+              {/* LEFT: Heatmap card — square, card shrinks to fit the square */}
+              <div style={{ flex: '0 0 auto', height: '100%', background: '#fff', borderRadius: '10px', border: '1px solid #e0e3eb', boxShadow: '0 2px 8px rgba(19,23,34,0.05)', padding: '10px', boxSizing: 'border-box' }}>
+                <div style={{ aspectRatio: '1 / 1', height: '100%', maxWidth: '100%' }}>
                 <ReactECharts
                   option={buildStrategyScannerHeatmap()}
                   style={{ height: '100%', width: '100%' }}
@@ -1903,18 +2199,19 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
                 />
                 </div>
               </div>
-            </div>
 
-            {/* RIGHT COLUMN: Combined chart — twin‑grid, axes perfectly aligned */}
-            <div style={{ flex: 1, minWidth: 0, height: '100%', background: '#fff', borderRadius: '6px', border: '1px solid #e0e3eb', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', padding: '14px', boxSizing: 'border-box' }}>
-              <ReactECharts option={buildStrategySpreadCombinedChart()} style={{ height: '100%', width: '100%' }} notMerge={true} />
+              {/* RIGHT: Combined chart card (trend + profit space, stacked) */}
+              <div style={{ flex: 1, minWidth: 0, height: '100%', background: '#fff', borderRadius: '10px', border: '1px solid #e0e3eb', boxShadow: '0 2px 8px rgba(19,23,34,0.05)', padding: '10px', boxSizing: 'border-box' }}>
+                <ReactECharts option={buildStrategySpreadCombinedChart()} style={{ height: '100%', width: '100%' }} notMerge={true} />
+              </div>
+
             </div>
 
           </div>
         )}
 
-{/* RIGHT SIDEBAR */}
-        {isSidebarVisible && (
+{/* RIGHT SIDEBAR (hidden on chart-dense pages to give the charts more room) */}
+        {isSidebarVisible && page !== 'page7' && page !== 'page5' && page !== 'page2' && (
           <div className="tv-right-sidebar">
           <div className="tv-watchlist-header">
             <span>自选表</span>
