@@ -729,9 +729,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
         },
         emphasis: {
           itemStyle: {
-            opacity: 1,
-            borderColor: '#131722',
-            borderWidth: 1.5
+            opacity: 1
           }
         },
         large: hourSeriesMap[h].length > 5000,
