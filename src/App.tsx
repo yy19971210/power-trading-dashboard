@@ -1059,7 +1059,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
     const maxAbs = Math.max(Math.abs(maxVal), Math.abs(minVal));
 
     return {
-      title: { text: '全时段平均套利空间矩阵 (日前 - 现货)', left: 0, top: 0, textStyle: { color: '#131722', fontSize: 13, fontWeight: 600 } },
+      title: { text: '全时段平均套利空间矩阵 (日前 − 现货)', left: 4, top: 2, textStyle: { color: '#131722', fontSize: 12, fontWeight: 600 } },
       tooltip: {
         position: 'top',
         formatter: (p: any) => {
@@ -1069,25 +1069,42 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
           return `时段 A: ${a}<br/>时段 B: ${b}<br/>平均套利空间: <b>${space}</b> 元/MWh`;
         }
       },
-      grid: { height: '80%', top: 35, right: 45, left: 35, bottom: 35 },
-      xAxis: { type: 'category', data: periods, name: '时段A', splitArea: { show: true }, axisLabel: { fontSize: 10, interval: 0 } },
-      yAxis: { type: 'category', data: periods, name: '时段B', splitArea: { show: true }, axisLabel: { fontSize: 10, interval: 0 } },
+      grid: { top: 26, right: 32, left: 28, bottom: 28, containLabel: true },
+      xAxis: {
+        type: 'category', data: periods, name: '时段A (买入)',
+        nameLocation: 'center', nameGap: 18, nameTextStyle: { color: '#787b86', fontSize: 10 },
+        splitArea: { show: true, areaStyle: { color: ['rgba(0,0,0,0)', 'rgba(0,0,0,0.02)'] } },
+        axisLabel: { fontSize: 9, interval: 2 },
+        axisLine: { lineStyle: { color: '#e0e3eb' } },
+        axisTick: { show: false }
+      },
+      yAxis: {
+        type: 'category', data: periods, name: '时段B (卖出)',
+        nameLocation: 'center', nameGap: 18, nameTextStyle: { color: '#787b86', fontSize: 10 },
+        splitArea: { show: true, areaStyle: { color: ['rgba(0,0,0,0)', 'rgba(0,0,0,0.02)'] } },
+        axisLabel: { fontSize: 9, interval: 2 },
+        axisLine: { lineStyle: { color: '#e0e3eb' } },
+        axisTick: { show: false }
+      },
       visualMap: {
         min: -maxAbs,
         max: maxAbs,
         calculable: true,
         orient: 'vertical',
-        right: 0,
+        right: 2,
         top: 'center',
-        itemWidth: 10,
-        inRange: { color: ['#089981', '#ffffff', '#f23645'] }
+        itemWidth: 8,
+        itemHeight: 100,
+        text: ['高', '低'],
+        textStyle: { fontSize: 9, color: '#787b86' },
+        inRange: { color: ['#089981', '#f5f5f5', '#f23645'] }
       },
       series: [{
         name: '套利空间',
         type: 'heatmap',
         data: strategyScannerData,
         label: { show: false },
-        emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0, 0, 0, 0.5)' } }
+        emphasis: { itemStyle: { shadowBlur: 8, shadowColor: 'rgba(0, 0, 0, 0.4)' } }
       }]
     };
   };
