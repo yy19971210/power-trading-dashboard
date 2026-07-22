@@ -661,8 +661,8 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
       grid: { left: 45, right: 45, top: 30, bottom: 20 },
       xAxis: { type: 'category', data: xData, axisLabel: { fontSize: 9, color: '#787b86' }, axisLine: { lineStyle: { color: '#e0e3eb' } } },
       yAxis: [
-        { type: 'value', name: outputLabel, nameTextStyle: { fontSize: 9, color: '#787b86' }, axisLabel: { fontSize: 9, color: '#787b86' }, splitLine: { show: false } },
-        { type: 'value', name: weatherLabel, nameTextStyle: { fontSize: 9, color: '#787b86' }, axisLabel: { fontSize: 9, color: '#787b86' }, splitLine: { show: false } }
+        { type: 'value', name: outputLabel, scale: true, nameTextStyle: { fontSize: 9, color: '#787b86' }, axisLabel: { fontSize: 9, color: '#787b86' }, splitLine: { show: false } },
+        { type: 'value', name: weatherLabel, scale: true, nameTextStyle: { fontSize: 9, color: '#787b86' }, axisLabel: { fontSize: 9, color: '#787b86' }, splitLine: { show: false } }
       ],
       series: [
         { name: outputLabel, type: 'line', data: outputData, yAxisIndex: 0, itemStyle: { color: color }, symbol: 'none', lineStyle: { width: 1.5 } },
