@@ -3,7 +3,7 @@ import { Card, Row, Col, Select, DatePicker, Button, Table, Space, Typography, S
 import { FilterOutlined, RiseOutlined, FallOutlined } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 const { RangePicker } = DatePicker;
 
 export const HistoryTab: React.FC = () => {

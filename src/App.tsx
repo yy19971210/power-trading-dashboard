@@ -1,7 +1,8 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts';
 import dayjs from 'dayjs';
+import { Select } from 'antd';
 import './App.css';
 
 // ===============================
@@ -40,6 +41,33 @@ const METRICS: { [k: string]: { label: string; color: string; unit: string } } =
   solar_radiation:  { label: '地表短波辐射', color: '#ff9800', unit: 'W/m²' },
   bidding_space:    { label: '竞价空间', color: '#1e40af', unit: 'MW' },
 };
+
+const HOUR_COLORS_24 = [
+  '#2563eb', // 01:00 宝蓝
+  '#0284c7', // 02:00 浅蓝
+  '#089981', // 03:00 青绿
+  '#10b981', // 04:00 翡翠绿
+  '#22c55e', // 05:00 鲜绿
+  '#84cc16', // 06:00 黄绿
+  '#eab308', // 07:00 金黄
+  '#f59e0b', // 08:00 暖黄
+  '#f97316', // 09:00 橙色
+  '#ef4444', // 10:00 红色
+  '#dc2626', // 11:00 深红
+  '#e11d48', // 12:00 玫瑰红
+  '#ec4899', // 13:00 粉红
+  '#d946ef', // 14:00 品红
+  '#c026d3', // 15:00 紫红
+  '#a855f7', // 16:00 亮紫
+  '#8b5cf6', // 17:00 紫罗兰
+  '#6366f1', // 18:00 靛蓝
+  '#4338ca', // 19:00 深靛蓝
+  '#1e40af', // 20:00 藏青
+  '#0f766e', // 21:00 深青
+  '#15803d', // 22:00 深绿
+  '#b45309', // 23:00 棕褐
+  '#475569', // 24:00 蓝灰
+];
 
 const TIME_BTNS: { key: TimeScale; label: string }[] = [
   { key: 'hourly', label: '24时段' },
@@ -92,6 +120,7 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [timeScale, setTimeScale] = useState<TimeScale>('hourly');
   const [dateRange, setDateRange] = useState<string>('1M');
+  const [biddingSelectedHours, setBiddingSelectedHours] = useState<number[]>(Array.from({ length: 24 }, (_, i) => i + 1));
   
   // Page 5 specific state
   const [selectedArbitragePair, setSelectedArbitragePair] = useState<[number, number]>([4, 19]);
@@ -601,22 +630,105 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
 
   // -- Page 3: Bidding Space vs Price --
   const buildBiddingChart = () => {
-    const pairs: [number, number, string][] = [];
-    currentData.forEach((r: any, i: number) => {
-      const bs = r.bidding_space, price = r.price_dayahead;
-      const dateLabel = xLabels[i] || '';
-      if (bs != null && price != null && isFinite(bs) && isFinite(price)) pairs.push([bs, price, dateLabel]);
+    if (!data || !data.hourly || data.hourly.length === 0) return {};
+
+    // 1. Determine date range
+    let minDate = data.meta.date_range.start;
+    let maxDate = selectedDate || data.meta.date_range.end;
+    if (dateRange === 'Custom' && customDateStart && customDateEnd) {
+      minDate = customDateStart;
+      maxDate = customDateEnd;
+    } else if (dateRange !== 'All' && selectedDate) {
+      const maxDateObj = new Date(selectedDate);
+      let days = 30;
+      switch (dateRange) {
+        case '1D': days = 1; break;
+        case '5D': days = 5; break;
+        case '1M': days = 30; break;
+        case '3M': days = 90; break;
+        case '6M': days = 180; break;
+        case '1Y': days = 365; break;
+        case '5Y': days = 1825; break;
+        default: days = 30;
+      }
+      minDate = new Date(maxDateObj.getTime() - (days - 1) * 24 * 3600 * 1000).toISOString().split('T')[0];
+    }
+
+    const filtered = data.hourly.filter(r => r.date && r.date >= minDate && r.date <= maxDate);
+
+    // Group hourly records into 24 periods
+    const hourSeriesMap: Record<number, any[]> = {};
+    for (let h = 1; h <= 24; h++) hourSeriesMap[h] = [];
+
+    const allPairs: [number, number, string][] = [];
+
+    filtered.forEach(r => {
+      const bs = r.bidding_space;
+      const price = r.price_dayahead;
+      const period = r.period;
+      if (bs != null && price != null && isFinite(bs) && isFinite(price) && period != null && period >= 1 && period <= 24) {
+        const timeLabel = `${r.date} ${String(period).padStart(2, '0')}:00`;
+        hourSeriesMap[period].push([bs, price, timeLabel, period]);
+
+        if (biddingSelectedHours.includes(period)) {
+          allPairs.push([bs, price, timeLabel]);
+        }
+      }
     });
-    if (pairs.length < 2) return {};
 
-    const reg = linearRegression(pairs);
-    const xMin = Math.min(...pairs.map(p => p[0]));
-    const xMax = Math.max(...pairs.map(p => p[0]));
-    const regLine = [[xMin, reg.slope * xMin + reg.intercept], [xMax, reg.slope * xMax + reg.intercept]];
+    const reg = allPairs.length >= 2 ? linearRegression(allPairs) : { slope: 0, intercept: 0, r2: 0 };
+    let regLine: [number, number][] = [];
+    if (allPairs.length >= 2) {
+      const xMin = Math.min(...allPairs.map(p => p[0]));
+      const xMax = Math.max(...allPairs.map(p => p[0]));
+      regLine = [[xMin, reg.slope * xMin + reg.intercept], [xMax, reg.slope * xMax + reg.intercept]];
+    }
 
-    // Color-code by price: red for high, blue for low
-    const priceMin = Math.min(...pairs.map(p => p[1]));
-    const priceMax = Math.max(...pairs.map(p => p[1]));
+    const seriesList: any[] = [];
+
+    for (let h = 1; h <= 24; h++) {
+      const isSelected = biddingSelectedHours.includes(h);
+      const hourName = `${String(h).padStart(2, '0')}:00 时段`;
+      const color = HOUR_COLORS_24[h - 1];
+
+      seriesList.push({
+        name: hourName,
+        type: 'scatter',
+        data: isSelected ? hourSeriesMap[h] : [],
+        symbolSize: 6,
+        itemStyle: {
+          color: color,
+          opacity: 0.75
+        },
+        emphasis: {
+          itemStyle: {
+            opacity: 1,
+            borderColor: '#131722',
+            borderWidth: 1
+          }
+        },
+        large: hourSeriesMap[h].length > 5000,
+        largeThreshold: 5000
+      });
+    }
+
+    if (regLine.length > 0) {
+      seriesList.push({
+        name: '线性回归趋势',
+        type: 'line',
+        data: regLine,
+        symbol: 'none',
+        lineStyle: { color: '#131722', width: 2, type: 'dashed' },
+        tooltip: { show: false },
+        z: 10
+      });
+    }
+
+    const selectedCountStr = biddingSelectedHours.length === 24 
+      ? '全部24个时段' 
+      : biddingSelectedHours.length === 0 
+        ? '未选择时段' 
+        : `选中 ${biddingSelectedHours.length} 个时段`;
 
     return {
       animation: false,
@@ -625,46 +737,61 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
         formatter: (p: any) => {
           if (p.seriesType === 'scatter') {
             const v = p.value || p.data || [];
-            return `时间: ${v[2] || '—'}<br/>竞价空间: ${v[0]?.toFixed(0)} MW<br/>日前价格: ${v[1]?.toFixed(2)} 元/MWh`;
+            return `<div style="font-weight:600;margin-bottom:4px;color:${p.color}">🕒 ${v[3] ? String(v[3]).padStart(2, '0') + ':00 时段' : p.seriesName}</div>
+                    <div style="font-size:12px;line-height:1.6;">
+                      <div><span style="color:#787b86">日期时间: </span><b>${v[2] || '—'}</b></div>
+                      <div><span style="color:#787b86">竞价空间: </span><b style="color:#1e40af">${v[0]?.toFixed(0)} MW</b></div>
+                      <div><span style="color:#787b86">日前价格: </span><b style="color:#e040fb">${v[1]?.toFixed(2)} 元/MWh</b></div>
+                    </div>`;
           }
           return '';
         },
-        backgroundColor: '#fff', borderColor: '#e0e3eb', textStyle: { color: '#131722', fontSize: 12 }
+        backgroundColor: '#fff', 
+        borderColor: '#e0e3eb', 
+        textStyle: { color: '#131722', fontSize: 12 },
+        extraCssText: 'box-shadow: 0 4px 12px rgba(0,0,0,0.15); border-radius: 6px; padding: 10px;'
       },
-      grid: { left: 16, right: 70, top: 80, bottom: 40, containLabel: true },
+      legend: {
+        type: 'scroll',
+        orient: 'horizontal',
+        top: 44,
+        left: 12,
+        right: 12,
+        textStyle: { color: '#131722', fontSize: 11 },
+        pageIconColor: '#2962ff',
+        itemGap: 12,
+        selected: legendState['bidding']
+      },
+      grid: { left: 16, right: 30, top: 100, bottom: 40, containLabel: true },
       title: {
-        text: '日前竞价空间 vs 日前价格',
-        subtext: `竞价空间 = 日前负荷 + 联络线 - 风电 - 光伏 - 水电\nR² = ${reg.r2.toFixed(4)}  |  y = ${reg.slope.toFixed(6)}x + ${reg.intercept.toFixed(2)}  |  N = ${pairs.length}`,
-        left: 12, top: 4,
+        text: '日前竞价空间 vs 日前价格 散点分布图 (按1-24时段独立着色)',
+        subtext: `范围: ${minDate} 至 ${maxDate} | ${selectedCountStr} | N = ${allPairs.length} | R² = ${reg.r2.toFixed(4)} | y = ${reg.slope.toFixed(6)}x + ${reg.intercept.toFixed(2)}`,
+        left: 12, 
+        top: 4,
         textStyle: { color: '#131722', fontSize: 14, fontWeight: 600 },
-        subtextStyle: { color: '#787b86', fontSize: 11, lineHeight: 16 }
+        subtextStyle: { color: '#4b5563', fontSize: 11, lineHeight: 16 }
       },
-      visualMap: {
-        show: true, type: 'continuous',
-        min: priceMin, max: priceMax,
-        dimension: 1,
-        inRange: { color: ['#2962ff', '#089981', '#f59e0b', '#f23645'] },
-        right: 8, top: 60, text: ['高价', '低价'],
-        textStyle: { color: '#787b86', fontSize: 10 },
-        itemWidth: 10, itemHeight: 100
-      },
-      xAxis: { type: 'value', name: '竞价空间 (MW)', nameLocation: 'center', nameGap: 28,
-        nameTextStyle: { color: '#787b86', fontSize: 12 },
+      xAxis: { 
+        type: 'value', 
+        name: '竞价空间 (MW)', 
+        nameLocation: 'center', 
+        nameGap: 28,
+        nameTextStyle: { color: '#787b86', fontSize: 12, fontWeight: 500 },
         axisLabel: { color: '#131722', fontSize: 10 },
         splitLine: { lineStyle: { color: '#f0f3fa' } },
-        axisLine: { lineStyle: { color: '#e0e3eb' } } },
-      yAxis: { type: 'value', name: '日前价格 (元/MWh)', nameLocation: 'center', nameGap: 48,
-        nameTextStyle: { color: '#787b86', fontSize: 12 },
+        axisLine: { lineStyle: { color: '#e0e3eb' } } 
+      },
+      yAxis: { 
+        type: 'value', 
+        name: '日前价格 (元/MWh)', 
+        nameLocation: 'center', 
+        nameGap: 48,
+        nameTextStyle: { color: '#787b86', fontSize: 12, fontWeight: 500 },
         axisLabel: { color: '#131722', fontSize: 10 },
         splitLine: { lineStyle: { color: '#f0f3fa' } },
-        axisLine: { show: false } },
-      series: [
-        { type: 'scatter', data: pairs, symbolSize: 5,
-          large: pairs.length > 50000, largeThreshold: 50000 },
-        { type: 'line', data: regLine, symbol: 'none',
-          lineStyle: { color: '#131722', width: 2, type: 'dashed' },
-          tooltip: { show: false } }
-      ]
+        axisLine: { show: false } 
+      },
+      series: seriesList
     };
   };
 
@@ -1031,7 +1158,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
   };
 
   const buildArbitrageHeatmap = () => {
-    const { heatmapData, avgPrices } = getArbitrageData();
+    const { heatmapData } = getArbitrageData();
     if (!heatmapData.length) return {};
     
     const hours = Array.from({length: 24}, (_, i) => String(i + 1));
@@ -1366,7 +1493,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
         {
           name: '极值区间',
           type: 'custom',
-          renderItem: function (params: any, api: any) {
+          renderItem: function (_params: any, api: any) {
             var xValue = api.value(0);
             var highPoint = api.coord([xValue, api.value(1)]);
             var lowPoint = api.coord([xValue, api.value(2)]);
@@ -1568,12 +1695,94 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
 
           {/* ===== PAGE 3: BIDDING SPACE ===== */}
           {page === 'page3' && (
-            <>
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '8px', gap: '8px', boxSizing: 'border-box' }}>
+              {/* Header Toolbar */}
+              <div style={{ 
+                background: '#fff', 
+                border: '1px solid #e0e3eb', 
+                borderRadius: '6px', 
+                padding: '10px 16px', 
+                display: 'flex', 
+                flexWrap: 'wrap', 
+                alignItems: 'center', 
+                justifyContent: 'space-between',
+                gap: '12px',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                  <span style={{ fontWeight: 600, fontSize: '13px', color: '#131722', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ color: '#2962ff' }}>🕒</span> 时段筛选 (1-24):
+                  </span>
+                  
+                  {/* Preset Buttons */}
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    <button 
+                      onClick={() => setBiddingSelectedHours(Array.from({ length: 24 }, (_, i) => i + 1))}
+                      style={{ padding: '4px 10px', fontSize: '12px', borderRadius: '4px', border: '1px solid #d9d9d9', background: biddingSelectedHours.length === 24 ? '#2962ff' : '#fff', color: biddingSelectedHours.length === 24 ? '#fff' : '#131722', cursor: 'pointer' }}
+                    >
+                      全选 (1-24)
+                    </button>
+                    <button 
+                      onClick={() => setBiddingSelectedHours([9, 10, 11, 12, 17, 18, 19, 20, 21])}
+                      style={{ padding: '4px 10px', fontSize: '12px', borderRadius: '4px', border: '1px solid #d9d9d9', background: '#fff', color: '#131722', cursor: 'pointer' }}
+                    >
+                      高峰 (9-12, 17-21)
+                    </button>
+                    <button 
+                      onClick={() => setBiddingSelectedHours([1, 2, 3, 4, 5, 6, 23, 24])}
+                      style={{ padding: '4px 10px', fontSize: '12px', borderRadius: '4px', border: '1px solid #d9d9d9', background: '#fff', color: '#131722', cursor: 'pointer' }}
+                    >
+                      低谷 (1-6, 23-24)
+                    </button>
+                    <button 
+                      onClick={() => setBiddingSelectedHours([7, 8, 13, 14, 15, 16, 22])}
+                      style={{ padding: '4px 10px', fontSize: '12px', borderRadius: '4px', border: '1px solid #d9d9d9', background: '#fff', color: '#131722', cursor: 'pointer' }}
+                    >
+                      平段 (7-8, 13-16, 22)
+                    </button>
+                    <button 
+                      onClick={() => setBiddingSelectedHours([])}
+                      style={{ padding: '4px 10px', fontSize: '12px', borderRadius: '4px', border: '1px solid #d9d9d9', background: '#fff', color: '#787b86', cursor: 'pointer' }}
+                    >
+                      清空
+                    </button>
+                  </div>
 
-              <div style={{ height: '100%', paddingTop: 4 }}>
-                <ReactECharts option={buildBiddingChart()} style={{ height: '100%' }} notMerge />
+                  {/* Multi-Select Dropdown */}
+                  <Select
+                    mode="multiple"
+                    allowClear
+                    style={{ minWidth: 260, maxWidth: 450 }}
+                    placeholder="选择指定时段..."
+                    value={biddingSelectedHours}
+                    onChange={(vals) => setBiddingSelectedHours(vals.map(Number).sort((a, b) => a - b))}
+                    maxTagCount="responsive"
+                    options={Array.from({ length: 24 }, (_, i) => {
+                      const h = i + 1;
+                      return {
+                        value: h,
+                        label: `${String(h).padStart(2, '0')}:00 时段`
+                      };
+                    })}
+                  />
+                </div>
+
+                {/* Quick stats indicator */}
+                <div style={{ fontSize: '12px', color: '#787b86' }}>
+                  已选中 <b style={{ color: '#2962ff' }}>{biddingSelectedHours.length}</b> / 24 个时段
+                </div>
               </div>
-            </>
+
+              {/* Chart container */}
+              <div style={{ flex: 1, minHeight: 0, background: '#fff', borderRadius: '6px', border: '1px solid #e0e3eb', padding: '8px' }}>
+                <ReactECharts 
+                  option={buildBiddingChart()} 
+                  style={{ height: '100%', width: '100%' }} 
+                  onEvents={{ legendselectchanged: (p: any) => handleLegendSelect('bidding', p) }} 
+                  notMerge 
+                />
+              </div>
+            </div>
           )}
 
           {/* ===== PAGE 4: SPOT PRICE COMPARISON ===== */}

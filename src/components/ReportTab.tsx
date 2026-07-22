@@ -1,6 +1,6 @@
 import React from 'react';
 import { Card, Button, Typography, Divider, Tag, Space } from 'antd';
-import { FileTextOutlined, DownloadOutlined, PrinterOutlined } from '@ant-design/icons';
+import { DownloadOutlined, PrinterOutlined } from '@ant-design/icons';
 
 const { Title, Paragraph, Text } = Typography;
 
