@@ -1121,9 +1121,9 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
       },
       axisPointer: { type: 'line', lineStyle: { color: '#787b86', type: 'dashed', width: 1 } },
       legend: { data: ['日前结算价差', '加权交易均价差'], top: 4, right: 10, textStyle: { fontSize: 11 }, icon: 'roundRect', itemWidth: 14, itemHeight: 3 },
-      grid: { top: 36, left: 55, right: 20, bottom: 30, containLabel: true },
+      grid: { top: 40, left: 70, right: 20, bottom: 30, containLabel: false },
       xAxis: { type: 'category', data: dates, boundaryGap: true, axisTick: { alignWithLabel: true }, axisLabel: { fontSize: 10, interval: intervalStep, formatter: (val: string) => (val && val.length >= 10 ? val.slice(5) : val) } },
-      yAxis: { type: 'value', name: '元/MWh', splitLine: { lineStyle: { color: '#f0f3fa' } }, axisLabel: { fontSize: 10 } },
+      yAxis: { type: 'value', name: '元/MWh', nameGap: 38, nameTextStyle: { color: '#787b86', fontSize: 11 }, splitLine: { lineStyle: { color: '#f0f3fa' } }, axisLabel: { fontSize: 10 } },
       series: [
         { name: '日前结算价差', type: 'line', data: da, itemStyle: { color: '#2962ff' }, smooth: true, lineStyle: { width: 2 }, symbol: 'none' },
         { name: '加权交易均价差', type: 'line', data: rt, itemStyle: { color: '#e91e63' }, smooth: true, lineStyle: { width: 2 }, symbol: 'none' }
@@ -1156,9 +1156,9 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
         }
       },
       axisPointer: { type: 'line', lineStyle: { color: '#787b86', type: 'dashed', width: 1 } },
-      grid: { top: 36, left: 55, right: 20, bottom: 30, containLabel: true },
+      grid: { top: 40, left: 70, right: 20, bottom: 30, containLabel: false },
       xAxis: { type: 'category', data: dates, boundaryGap: true, axisTick: { alignWithLabel: true }, axisLabel: { fontSize: 10, interval: intervalStep, formatter: (val: string) => (val && val.length >= 10 ? val.slice(5) : val) } },
-      yAxis: { type: 'value', name: '元/MWh', splitLine: { lineStyle: { color: '#f0f3fa' } }, axisLabel: { fontSize: 10 } },
+      yAxis: { type: 'value', name: '元/MWh', nameGap: 38, nameTextStyle: { color: '#787b86', fontSize: 11 }, splitLine: { lineStyle: { color: '#f0f3fa' } }, axisLabel: { fontSize: 10 } },
       series: [{
         name: '套利空间', type: 'bar', data: spaces,
         itemStyle: { color: (params: any) => params.value > 0 ? '#f23645' : '#089981' }
