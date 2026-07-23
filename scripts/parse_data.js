@@ -121,11 +121,15 @@ function parseWeather() {
         const base = path.basename(f);
         return base.startsWith("风速、地表短波辐射-城市加权-") && !base.includes("河东");
     });
+    const hedongFiles = getFiles(dir, ".xlsx").filter(f => {
+        const base = path.basename(f);
+        return base.startsWith("风速、地表短波辐射-河东-");
+    });
     const tempFiles = getFiles(dir, ".xlsx").filter(f => {
         const base = path.basename(f);
         return base.startsWith("温度、地表总降水-省内-");
     });
-    const files = [...windFiles, ...tempFiles].sort();
+    const files = [...windFiles, ...tempFiles, ...hedongFiles].sort();
     
     let records = [];
     for (const file of files) {
@@ -140,21 +144,33 @@ function parseWeather() {
         if (data.length <= 3) continue;
         
         const row0 = data[0];
+        // Row 1 ("天气周期类型") carries the actual period label per column.
+        // Historical dates are 1..24, but forecast dates only have sparse
+        // points (e.g. 3, 9, 15, 21) — use these labels instead of counting
+        // columns so the x-axis matches the data source.
+        const row1 = data[1] || [];
         const isTempFile = path.basename(file).startsWith("温度");
-        let midTermRow = -1;
+        const isHedongFile = path.basename(file).startsWith("风速、地表短波辐射-河东-");
+
+        // Section policy: parse 长期 first, then 中期 — when both exist for the
+        // same date+period, 中期 wins (pivot assignment is last-write-wins).
+        let sectionRows = [];
         for (let i = 0; i < data.length; i++) {
-            if (data[i] && data[i][0] === '中期') {
-                midTermRow = i;
-                break;
+            if (data[i] && (data[i][0] === '长期' || data[i][0] === '中期')) {
+                sectionRows.push({ idx: i, type: data[i][0] });
             }
         }
-        if (midTermRow === -1) midTermRow = 2; // fallback
+        if (sectionRows.length === 0) sectionRows = [{ idx: 2, type: '中期' }]; // fallback
+        sectionRows.sort((a, b) => (a.type === b.type ? a.idx - b.idx : a.type === '长期' ? -1 : 1));
 
-        const metricMap = isTempFile 
-            ? { [midTermRow]: 'temperature', [midTermRow + 1]: 'rainfall' }
-            : { [midTermRow]: 'wind_speed', [midTermRow + 1]: 'solar_radiation' };
-        
-        for (let data_row_idx of [midTermRow, midTermRow + 1]) {
+        for (const sec of sectionRows) {
+        const metricMap = isTempFile
+            ? { [sec.idx]: 'temperature', [sec.idx + 1]: 'rainfall' }
+            : isHedongFile
+            ? { [sec.idx]: 'hedong_wind_speed', [sec.idx + 1]: 'hedong_solar_radiation' }
+            : { [sec.idx]: 'wind_speed', [sec.idx + 1]: 'solar_radiation' };
+
+        for (let data_row_idx of [sec.idx, sec.idx + 1]) {
             if (data_row_idx >= data.length) continue;
             let metric_name = metricMap[data_row_idx];
             
@@ -177,7 +193,12 @@ function parseWeather() {
                      }
                 }
                 
-                current_period++;
+                const labelMatch = row1[col_idx] != null ? String(row1[col_idx]).match(/(\d+)/) : null;
+                if (labelMatch) {
+                    current_period = parseInt(labelMatch[1], 10);
+                } else {
+                    current_period++;
+                }
                 if (current_period > 24) continue;
                 
                 let val = data[data_row_idx][col_idx];
@@ -191,8 +212,9 @@ function parseWeather() {
                 }
             }
         }
+        }
     }
-    
+
     let pivot = {};
     for (let r of records) {
         let key = `${r.date}_${r.period}`;
@@ -217,7 +239,8 @@ function buildRecords(arr, timeKey) {
         
         ['load', 'interconnect', 'wind', 'solar', 'hydro', 'renewables',
          'generation', 'price_dayahead', 'price_realtime',
-         'wind_speed', 'solar_radiation', 'temperature', 'rainfall', 'bidding_space'].forEach(col => {
+         'wind_speed', 'solar_radiation', 'temperature', 'rainfall', 'bidding_space',
+         'hedong_wind_speed', 'hedong_solar_radiation'].forEach(col => {
              if (row[col] !== undefined && row[col] !== null && !isNaN(row[col])) {
                  rec[col] = Math.round(row[col] * 100) / 100;
              }
@@ -306,6 +329,8 @@ function aggregateAndExport(ops, prices, weather, rolling) {
         if (w.solar_radiation !== undefined) mergedMap[key].solar_radiation = w.solar_radiation;
         if (w.temperature !== undefined) mergedMap[key].temperature = w.temperature;
         if (w.rainfall !== undefined) mergedMap[key].rainfall = w.rainfall;
+        if (w.hedong_wind_speed !== undefined) mergedMap[key].hedong_wind_speed = w.hedong_wind_speed;
+        if (w.hedong_solar_radiation !== undefined) mergedMap[key].hedong_solar_radiation = w.hedong_solar_radiation;
     }
     
     let merged = Object.values(mergedMap).map(m => {
@@ -340,7 +365,8 @@ function aggregateAndExport(ops, prices, weather, rolling) {
             groups[key].count++;
             
             ['load', 'interconnect', 'wind', 'solar', 'hydro', 'renewables', 'generation',
-                'price_dayahead', 'price_realtime', 'wind_speed', 'solar_radiation', 'temperature', 'rainfall', 'bidding_space'].forEach(col => {
+                'price_dayahead', 'price_realtime', 'wind_speed', 'solar_radiation', 'temperature', 'rainfall', 'bidding_space',
+                'hedong_wind_speed', 'hedong_solar_radiation'].forEach(col => {
                 if (row[col] !== undefined && row[col] !== null) {
                     groups[key].sum[col] = (groups[key].sum[col] || 0) + row[col];
                 }

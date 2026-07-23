@@ -49,6 +49,12 @@ const WEATHER_COMPARE_ITEMS = [
   { key: 'rainfall',        label: '降水',     unit: 'mm',   color: '#2962ff' },
 ];
 
+// Page 2: Hedong (河东) weather comparison config — only wind/radiation available
+const HEDONG_COMPARE_ITEMS = [
+  { key: 'hedong_wind_speed',      label: '风速 (河东)',     unit: 'm/s',  color: '#0d9488' },
+  { key: 'hedong_solar_radiation', label: '短波辐射 (河东)', unit: 'W/m²', color: '#ea580c' },
+];
+
 // Page 2: time-series / scatter metric config keyed by weatherMetric
 const WEATHER_TS_CFG: { [k: string]: { ts: [string, string, string, string, string]; scatter: [string, string, string, string, string] } } = {
   wind:  { ts: ['wind_speed', 'wind', '风速', '风电出力', '#089981'], scatter: ['wind_speed', 'wind', '风速 (m/s)', '风电出力 (MW)', '#089981'] },
@@ -147,7 +153,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   const [weatherMetric, setWeatherMetric] = useState<'wind'|'solar'|'load'|'hydro'>('wind');
   // Page 2: two-day comparison state
-  const [page2Tab, setPage2Tab] = useState<'compare' | 'correlation' | 'timeseries'>('compare');
+  const [page2Tab, setPage2Tab] = useState<'compare' | 'correlation' | 'timeseries' | 'hedong'>('compare');
   const [compareDateA, setCompareDateA] = useState<string>('');
   const [compareDateB, setCompareDateB] = useState<string>('');
   const [comparePriceType, setComparePriceType] = useState<'price_dayahead' | 'price_realtime'>('price_dayahead');
@@ -719,8 +725,8 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
       xAxis: { type: 'category', data: hours, axisLabel: { fontSize: 9, interval: 3, color: '#787b86' }, axisLine: { lineStyle: { color: '#e0e3eb' } }, axisTick: { show: false } },
       yAxis: { type: 'value', scale: true, axisLabel: { fontSize: 9, color: '#787b86' }, splitLine: { lineStyle: { color: '#f0f3fa' } } },
       series: [
-        { name: dateA, type: 'line', data: a, symbol: 'none', lineStyle: { width: 2, color }, itemStyle: { color } },
-        { name: dateB, type: 'line', data: b, symbol: 'none', lineStyle: { width: 1.5, color: '#94a3b8', type: 'dashed' }, itemStyle: { color: '#94a3b8' } }
+        { name: dateA, type: 'line', data: a, connectNulls: true, symbol: 'circle', symbolSize: 4, lineStyle: { width: 2, color }, itemStyle: { color } },
+        { name: dateB, type: 'line', data: b, connectNulls: true, symbol: 'circle', symbolSize: 3, lineStyle: { width: 1.5, color: '#94a3b8', type: 'dashed' }, itemStyle: { color: '#94a3b8' } }
       ]
     };
   };
@@ -757,6 +763,49 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
       </div>
     );
   };
+
+  const renderPriceCompareCard = () => (
+    <div style={{ flex: 1, minWidth: 0, background: '#fff', borderRadius: '10px', border: '1px solid #e0e3eb', boxShadow: '0 2px 8px rgba(19,23,34,0.05)', padding: '10px 12px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+        <span style={{ fontSize: '13px', fontWeight: 600, color: '#131722' }}>两日价格对比 <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 400 }}>元/MWh</span></span>
+        <div style={{ display: 'flex', gap: '2px', background: '#f0f3fa', borderRadius: '6px', padding: '2px' }}>
+          {([['price_dayahead', '日前'], ['price_realtime', '实时']] as const).map(([id, label]) => (
+            <button key={id} onClick={() => setComparePriceType(id)}
+              style={{
+                padding: '2px 10px', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '11px',
+                fontWeight: comparePriceType === id ? 600 : 400,
+                background: comparePriceType === id ? '#fff' : 'transparent',
+                color: comparePriceType === id ? '#2962ff' : '#787b86',
+                boxShadow: comparePriceType === id ? '0 1px 2px rgba(19,23,34,0.1)' : 'none'
+              }}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <ReactECharts option={buildDayPriceCompareChart(cmpDateA, cmpDateB, comparePriceType)} style={{ height: '100%', width: '100%' }} notMerge />
+      </div>
+    </div>
+  );
+
+  const renderTimeSeriesCard = () => (
+    <div style={{ flex: 1, minWidth: 0, background: '#fff', borderRadius: '10px', border: '1px solid #e0e3eb', boxShadow: '0 2px 8px rgba(19,23,34,0.05)', padding: '10px 12px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+        <span style={{ fontSize: '13px', fontWeight: 600, color: '#131722' }}>气象-出力时序</span>
+        <select value={weatherMetric} onChange={e => setWeatherMetric(e.target.value as any)}
+          style={{ padding: '3px 8px', border: '1px solid #e0e3eb', borderRadius: '6px', outline: 'none', fontSize: '11px', color: '#4b5563', background: '#f5f7fa', cursor: 'pointer' }}>
+          <option value="wind">风电 vs 风速</option>
+          <option value="solar">光伏 vs 辐射</option>
+          <option value="load">负荷 vs 温度</option>
+          <option value="hydro">水电 vs 降水</option>
+        </select>
+      </div>
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <ReactECharts option={buildWeatherTimeSeriesChart(...WEATHER_TS_CFG[weatherMetric].ts)} style={{ height: '100%', width: '100%' }} notMerge />
+      </div>
+    </div>
+  );
 
   // -- Page 3: Bidding Space vs Price --
   const buildBiddingChart = () => {
@@ -1620,7 +1669,9 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
         for(let p=0; p<periods.length; p++) {
             const r = filteredRollingData.find((x: any) => x.target_date === dates[d] && x.period === periods[p]);
             if(r) {
-                heatData.push([p, d, r.spread]);
+                const da = r.day_ahead_price != null ? r.day_ahead_price : null;
+                const wt = da != null && r.spread != null ? da + r.spread : null;
+                heatData.push({ value: [p, d, r.spread], da, wt });
                 spreads.push(Math.abs(r.spread));
             }
         }
@@ -1633,7 +1684,14 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
       title: { text: '日滚动交易机会(D+2) 价差热力图', left: 8, top: 0, textStyle: { color: '#131722', fontSize: 14 } },
       tooltip: {
         position: 'top',
-        formatter: (p: any) => `标的日期: ${dates[p.data[1]]}<br/>时段: ${periods[p.data[0]]}:00<br/>交易机会价差: <b>${p.data[2].toFixed(2)}</b> 元/MWh`
+        formatter: (p: any) => {
+          const da = p.data.da;
+          const wt = p.data.wt;
+          return `标的日期: ${dates[p.data.value[1]]}<br/>时段: ${periods[p.data.value[0]]}:00<br/>` +
+            `日前价格: <b>${da != null ? da.toFixed(2) : '-'}</b> 元/MWh<br/>` +
+            `加权价格: <b>${wt != null ? wt.toFixed(2) : '-'}</b> 元/MWh<br/>` +
+            `交易机会价差: <b>${p.data.value[2].toFixed(2)}</b> 元/MWh`;
+        }
       },
       grid: { top: 40, height: dates.length * 25, left: 80, right: 80 },
       xAxis: {
@@ -1657,7 +1715,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
       series: [{
         type: 'heatmap',
         data: heatData,
-        label: { show: true, fontSize: 10, formatter: (p: any) => p.data[2].toFixed(2) },
+        label: { show: true, fontSize: 10, formatter: (p: any) => p.data.value[2].toFixed(2) },
         itemStyle: { borderWidth: 1, borderColor: '#f3f4f6' },
         emphasis: { disabled: true }
       }]
@@ -1862,7 +1920,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
               <div style={{ display: 'flex', gap: '14px', alignItems: 'center', flexShrink: 0, flexWrap: 'wrap', background: '#fff', borderRadius: '10px', border: '1px solid #e0e3eb', boxShadow: '0 2px 8px rgba(19,23,34,0.05)', padding: '4px 16px' }}>
                 <span style={{ fontWeight: 700, color: '#131722', fontSize: '15px' }}>气象相关性</span>
                 <div style={{ width: '1px', height: '20px', background: '#e0e3eb' }} />
-                {page2Tab === 'compare' && (
+                {(page2Tab === 'compare' || page2Tab === 'hedong') && (
                   <>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f5f7fa', border: '1px solid #e0e3eb', borderRadius: '8px', padding: '2px 8px' }}>
                       <span style={{ color: '#787b86', fontSize: '12px' }}>日期A</span>
@@ -1877,7 +1935,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
                     </div>
                   </>
                 )}
-                {page2Tab !== 'compare' && (
+                {(page2Tab === 'timeseries' || page2Tab === 'correlation') && (
                   <div style={{ display: 'flex', gap: '2px', background: '#f0f3fa', borderRadius: '8px', padding: '3px' }}>
                     {([['wind', '风电 vs 风速'], ['solar', '光伏 vs 辐射'], ['load', '负荷 vs 温度'], ['hydro', '水电 vs 降水']] as const).map(([id, label]) => (
                       <button key={id} onClick={() => setWeatherMetric(id)}
@@ -1894,7 +1952,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
                   </div>
                 )}
                 <div style={{ marginLeft: 'auto', display: 'flex', gap: '2px', background: '#f0f3fa', borderRadius: '8px', padding: '2px' }}>
-                  {([['compare', '两日对比'], ['timeseries', '出力与气象时序'], ['correlation', '相关性分析']] as const).map(([id, label]) => (
+                  {([['compare', '两日对比'], ['hedong', '河东对比'], ['timeseries', '出力与气象时序'], ['correlation', '相关性分析']] as const).map(([id, label]) => (
                     <button key={id} onClick={() => setPage2Tab(id)}
                       style={{
                         padding: '3px 12px', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px',
@@ -1916,54 +1974,28 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
                   {/* 2x2 grid: wind / radiation / temperature + price */}
                   <div style={{ height: '560px', flexShrink: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr', gap: '10px' }}>
                     {WEATHER_COMPARE_ITEMS.slice(0, 3).map(renderWeatherCompareCard)}
-
-                    {/* Price comparison card (with 日前/实时 toggle) */}
-                    <div style={{ background: '#fff', borderRadius: '10px', border: '1px solid #e0e3eb', boxShadow: '0 2px 8px rgba(19,23,34,0.05)', padding: '10px 12px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-                        <span style={{ fontSize: '13px', fontWeight: 600, color: '#131722' }}>两日价格对比 <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 400 }}>元/MWh</span></span>
-                        <div style={{ display: 'flex', gap: '2px', background: '#f0f3fa', borderRadius: '6px', padding: '2px' }}>
-                          {([['price_dayahead', '日前'], ['price_realtime', '实时']] as const).map(([id, label]) => (
-                            <button key={id} onClick={() => setComparePriceType(id)}
-                              style={{
-                                padding: '2px 10px', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '11px',
-                                fontWeight: comparePriceType === id ? 600 : 400,
-                                background: comparePriceType === id ? '#fff' : 'transparent',
-                                color: comparePriceType === id ? '#2962ff' : '#787b86',
-                                boxShadow: comparePriceType === id ? '0 1px 2px rgba(19,23,34,0.1)' : 'none'
-                              }}>
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <div style={{ flex: 1, minHeight: 0 }}>
-                        <ReactECharts option={buildDayPriceCompareChart(cmpDateA, cmpDateB, comparePriceType)} style={{ height: '100%', width: '100%' }} notMerge />
-                      </div>
-                    </div>
+                    {renderPriceCompareCard()}
                   </div>
 
-                  {/* Bottom row: rainfall compare + weather/output time series */}
+                  {/* Row 3: weather/output time series — full width */}
                   <div style={{ height: '280px', flexShrink: 0, display: 'flex', gap: '10px' }}>
+                    {renderTimeSeriesCard()}
+                  </div>
 
+                  {/* Row 4: rainfall compare — same width as wind/temp cards, alone on its row */}
+                  <div style={{ height: '280px', flexShrink: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                     {renderWeatherCompareCard(WEATHER_COMPARE_ITEMS[3])}
+                  </div>
+                </div>
+              )}
 
-                    {/* Weather/output time series card */}
-                    <div style={{ flex: 1, minWidth: 0, background: '#fff', borderRadius: '10px', border: '1px solid #e0e3eb', boxShadow: '0 2px 8px rgba(19,23,34,0.05)', padding: '10px 12px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-                        <span style={{ fontSize: '13px', fontWeight: 600, color: '#131722' }}>气象-出力时序</span>
-                        <select value={weatherMetric} onChange={e => setWeatherMetric(e.target.value as any)}
-                          style={{ padding: '3px 8px', border: '1px solid #e0e3eb', borderRadius: '6px', outline: 'none', fontSize: '11px', color: '#4b5563', background: '#f5f7fa', cursor: 'pointer' }}>
-                          <option value="wind">风电 vs 风速</option>
-                          <option value="solar">光伏 vs 辐射</option>
-                          <option value="load">负荷 vs 温度</option>
-                          <option value="hydro">水电 vs 降水</option>
-                        </select>
-                      </div>
-                      <div style={{ flex: 1, minHeight: 0 }}>
-                        <ReactECharts option={buildWeatherTimeSeriesChart(...WEATHER_TS_CFG[weatherMetric].ts)} style={{ height: '100%', width: '100%' }} notMerge />
-                      </div>
-                    </div>
-
+              {/* TAB: HEDONG TWO-DAY COMPARISON (same 2x2 layout as 两日对比) */}
+              {page2Tab === 'hedong' && (
+                <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div style={{ height: '560px', flexShrink: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr', gap: '10px' }}>
+                    {HEDONG_COMPARE_ITEMS.map(renderWeatherCompareCard)}
+                    {renderPriceCompareCard()}
+                    {renderTimeSeriesCard()}
                   </div>
                 </div>
               )}
@@ -2096,7 +2128,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
                 onEvents={{
                   click: (params: any) => {
                     if (params.componentType === 'series') {
-                      setSelectedRollingPeriod(params.data[0] + 1);
+                      setSelectedRollingPeriod(params.value[0] + 1);
                     }
                   }
                 }}
