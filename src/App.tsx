@@ -42,18 +42,28 @@ const METRICS: { [k: string]: { label: string; color: string; unit: string } } =
 };
 
 // Page 2: two-day weather comparison config
+// outKey/outLabel/outColor: output/load series overlaid as bars on a second y-axis
 const WEATHER_COMPARE_ITEMS = [
-  { key: 'wind_speed',      label: '风速',     unit: 'm/s',  color: '#26a69a' },
-  { key: 'solar_radiation', label: '短波辐射', unit: 'W/m²', color: '#ff9800' },
-  { key: 'temperature',     label: '温度',     unit: '°C',   color: '#f23645' },
-  { key: 'rainfall',        label: '降水',     unit: 'mm',   color: '#2962ff' },
+  { key: 'wind_speed',      label: '风速',     unit: 'm/s',  color: '#26a69a', outKey: 'wind',  outLabel: '风电出力', outColor: '#089981' },
+  { key: 'solar_radiation', label: '短波辐射', unit: 'W/m²', color: '#ff9800', outKey: 'solar', outLabel: '光伏出力', outColor: '#f59e0b' },
+  { key: 'temperature',     label: '温度',     unit: '°C',   color: '#f23645', outKey: 'load',  outLabel: '系统负荷', outColor: '#6366f1' },
+  { key: 'rainfall',        label: '降水',     unit: 'mm',   color: '#2962ff', outKey: 'hydro', outLabel: '水电出力', outColor: '#0ea5e9' },
 ];
 
 // Page 2: Hedong (河东) weather comparison config — only wind/radiation available
 const HEDONG_COMPARE_ITEMS = [
-  { key: 'hedong_wind_speed',      label: '风速 (河东)',     unit: 'm/s',  color: '#0d9488' },
-  { key: 'hedong_solar_radiation', label: '短波辐射 (河东)', unit: 'W/m²', color: '#ea580c' },
+  { key: 'hedong_wind_speed',      label: '风速 (河东)',     unit: 'm/s',  color: '#0d9488', outKey: 'wind',  outLabel: '风电出力', outColor: '#089981' },
+  { key: 'hedong_solar_radiation', label: '短波辐射 (河东)', unit: 'W/m²', color: '#ea580c', outKey: 'solar', outLabel: '光伏出力', outColor: '#f59e0b' },
 ];
+
+// Hedong tab: standalone load card (no weather line, A/B load lines only)
+const HEDONG_LOAD_ITEM = { key: 'load', label: '系统负荷', unit: 'MW', color: '#6366f1' };
+
+// 两日对比 tab: standalone interconnect card (A/B lines only, fills row 4 right half)
+const INTERCONNECT_ITEM = { key: 'interconnect', label: '联络线', unit: 'MW', color: '#8b5cf6' };
+
+// 两日对比 tab: standalone bidding-space card (A/B lines only)
+const BIDDING_SPACE_ITEM = { key: 'bidding_space', label: '竞价空间', unit: 'MW', color: '#1e40af' };
 
 // Page 2: time-series / scatter metric config keyed by weatherMetric
 const WEATHER_TS_CFG: { [k: string]: { ts: [string, string, string, string, string]; scatter: [string, string, string, string, string] } } = {
@@ -110,6 +120,19 @@ const PAGE_BTNS: { key: PageId; label: string }[] = [
 // ===============================
 // Helpers
 // ===============================
+// Isolated ticking clock — keeps the 1s re-render scoped to this tiny
+// component so chart tooltips are not dismissed by App-level re-renders.
+const Clock = () => {
+  const [time, setTime] = useState('');
+  useEffect(() => {
+    const tick = () => setTime(new Date().toLocaleTimeString('en-US', { hour12: false }) + ' (UTC+8)');
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, []);
+  return <span>{time}</span>;
+};
+
 const fmtNum = (n: number | null | undefined) => n != null ? n.toLocaleString('en-US', { maximumFractionDigits: 0 }) : '—';
 const fmtPct = (n: number | null | undefined) => {
   if (n == null) return '—';
@@ -164,7 +187,6 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [customDateStart, setCustomDateStart] = useState('');
   const [customDateEnd, setCustomDateEnd] = useState('');
-  const [currentTime, setCurrentTime] = useState('');
 
   const handleHourClick = (h: number, e: React.MouseEvent) => {
     if (e.shiftKey && lastClickedHour !== null) {
@@ -185,13 +207,6 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
     }
     setLastClickedHour(h);
   };
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(new Date().toLocaleTimeString('en-US', { hour12: false }) + ' (UTC+8)');
-    }, 1000);
-    return () => clearInterval(timer);
-  }, []);
 
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
@@ -709,24 +724,51 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
   const cmpDateA = compareDateA || selectedDate || data?.meta.date_range.end || '';
   const cmpDateB = compareDateB || (cmpDateA ? dayjs(cmpDateA).subtract(1, 'day').format('YYYY-MM-DD') : '');
 
-  const buildDayCompareChart = (key: string, unit: string, color: string, dateA: string, dateB: string) => {
+  const buildDayCompareChart = (key: string, unit: string, color: string, dateA: string, dateB: string,
+      output?: { key: string; label: string; unit: string; color: string }) => {
     const hours = Array.from({ length: 24 }, (_, i) => String(i + 1));
     const a = getDayValues(dateA, key);
     const b = getDayValues(dateB, key);
+    const outAName = output ? `${output.label}(A)` : '';
+    const outBName = output ? `${output.label}(B)` : '';
+    const barSeries = output ? [
+      { name: outAName, type: 'bar', data: getDayValues(dateA, output.key), yAxisIndex: 1, barWidth: '45%',
+        itemStyle: { color: output.color, opacity: 0.7 } },
+      { name: outBName, type: 'bar', data: getDayValues(dateB, output.key), yAxisIndex: 1, barGap: '-100%',
+        itemStyle: { color: 'transparent', borderColor: output.color, borderWidth: 1.5, borderType: 'dashed' as const, opacity: 0.9 } }
+    ] : [];
     return {
       tooltip: {
         trigger: 'axis',
         backgroundColor: 'rgba(19, 23, 34, 0.92)', borderWidth: 0,
         textStyle: { color: '#fff', fontSize: 12 },
-        valueFormatter: (v: any) => (v == null ? '-' : `${Number(v).toFixed(1)} ${unit}`)
+        ...(output ? {
+          formatter: (params: any[]) => {
+            if (!params || !params.length) return '';
+            const rows = [`${params[0].axisValue}时`];
+            params.forEach((p: any) => {
+              const u = (p.seriesName === outAName || p.seriesName === outBName) ? output.unit : unit;
+              rows.push(`${p.marker} ${p.seriesName}: ${p.value == null ? '-' : Number(p.value).toFixed(2) + ' ' + u}`);
+            });
+            return rows.join('<br/>');
+          }
+        } : {
+          valueFormatter: (v: any) => (v == null ? '-' : `${Number(v).toFixed(2)} ${unit}`)
+        })
       },
-      legend: { data: [dateA, dateB], top: 0, right: 0, textStyle: { fontSize: 10, color: '#4b5563' }, itemWidth: 14, itemHeight: 3, icon: 'roundRect' },
-      grid: { left: 42, right: 12, top: 24, bottom: 20 },
+      legend: output
+        ? { data: [dateA, dateB, outAName, outBName], top: 0, left: 'center', textStyle: { fontSize: 10, color: '#4b5563' }, itemWidth: 14, itemHeight: 3, icon: 'roundRect' }
+        : { data: [dateA, dateB], top: 0, right: 0, textStyle: { fontSize: 10, color: '#4b5563' }, itemWidth: 14, itemHeight: 3, icon: 'roundRect' },
+      grid: { left: 42, right: output ? 42 : 12, top: 24, bottom: 20 },
       xAxis: { type: 'category', data: hours, axisLabel: { fontSize: 9, interval: 3, color: '#787b86' }, axisLine: { lineStyle: { color: '#e0e3eb' } }, axisTick: { show: false } },
-      yAxis: { type: 'value', scale: true, axisLabel: { fontSize: 9, color: '#787b86' }, splitLine: { lineStyle: { color: '#f0f3fa' } } },
+      yAxis: output ? [
+        { type: 'value', scale: true, name: unit, nameTextStyle: { fontSize: 9, color: '#787b86' }, axisLabel: { fontSize: 9, color: '#787b86' }, splitLine: { lineStyle: { color: '#f0f3fa' } } },
+        { type: 'value', scale: true, name: output.unit, nameTextStyle: { fontSize: 9, color: '#787b86' }, axisLabel: { fontSize: 9, color: '#787b86' }, splitLine: { show: false } }
+      ] : { type: 'value', scale: true, axisLabel: { fontSize: 9, color: '#787b86' }, splitLine: { lineStyle: { color: '#f0f3fa' } } },
       series: [
         { name: dateA, type: 'line', data: a, connectNulls: true, symbol: 'circle', symbolSize: 4, lineStyle: { width: 2, color }, itemStyle: { color } },
-        { name: dateB, type: 'line', data: b, connectNulls: true, symbol: 'circle', symbolSize: 3, lineStyle: { width: 1.5, color: '#94a3b8', type: 'dashed' }, itemStyle: { color: '#94a3b8' } }
+        { name: dateB, type: 'line', data: b, connectNulls: true, symbol: 'circle', symbolSize: 3, lineStyle: { width: 1.5, color: '#94a3b8', type: 'dashed' }, itemStyle: { color: '#94a3b8' } },
+        ...barSeries
       ]
     };
   };
@@ -735,7 +777,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
     return buildDayCompareChart(priceKey, '元/MWh', priceKey === 'price_dayahead' ? '#e040fb' : '#ff6d00', dateA, dateB);
   };
 
-  const renderWeatherCompareCard = (item: { key: string; label: string; unit: string; color: string }) => {
+  const renderWeatherCompareCard = (item: { key: string; label: string; unit: string; color: string; outKey?: string; outLabel?: string; outColor?: string }) => {
     const ma = dayMean(getDayValues(cmpDateA, item.key));
     const mb = dayMean(getDayValues(cmpDateB, item.key));
     const delta = ma != null && mb != null ? ma - mb : null;
@@ -747,14 +789,15 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
             {item.label} <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 400 }}>{item.unit}</span>
           </span>
           <span style={{ fontSize: '11px', color: '#787b86' }}>
-            A均 <b style={{ color: '#131722' }}>{ma != null ? ma.toFixed(1) : '-'}</b>
-            {' · '}B均 <b style={{ color: '#131722' }}>{mb != null ? mb.toFixed(1) : '-'}</b>
-            {' · '}Δ <b style={{ color: delta != null && delta >= 0 ? '#f23645' : '#089981' }}>{delta != null ? (delta >= 0 ? '+' : '') + delta.toFixed(1) : '-'}</b>
+            A均 <b style={{ color: '#131722' }}>{ma != null ? ma.toFixed(2) : '-'}</b>
+            {' · '}B均 <b style={{ color: '#131722' }}>{mb != null ? mb.toFixed(2) : '-'}</b>
+            {' · '}Δ <b style={{ color: delta != null && delta >= 0 ? '#f23645' : '#089981' }}>{delta != null ? (delta >= 0 ? '+' : '') + delta.toFixed(2) : '-'}</b>
           </span>
         </div>
         <div style={{ flex: 1, minHeight: 0 }}>
           <ReactECharts
-            option={buildDayCompareChart(item.key, item.unit, item.color, cmpDateA, cmpDateB)}
+            option={buildDayCompareChart(item.key, item.unit, item.color, cmpDateA, cmpDateB,
+              item.outKey ? { key: item.outKey, label: item.outLabel!, unit: 'MW', color: item.outColor! } : undefined)}
             style={{ height: '100%', width: '100%' }}
             notMerge
             onChartReady={(c: any) => { c.group = 'weather-compare'; }}
@@ -1977,23 +2020,30 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
                     {renderPriceCompareCard()}
                   </div>
 
-                  {/* Row 3: weather/output time series — full width */}
+                  {/* Row 3: bidding space + interconnect compare — same width as wind/temp cards */}
+                  <div style={{ height: '280px', flexShrink: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    {renderWeatherCompareCard(BIDDING_SPACE_ITEM)}
+                    {renderWeatherCompareCard(INTERCONNECT_ITEM)}
+                  </div>
+
+                  {/* Row 4: weather/output time series — full width */}
                   <div style={{ height: '280px', flexShrink: 0, display: 'flex', gap: '10px' }}>
                     {renderTimeSeriesCard()}
                   </div>
 
-                  {/* Row 4: rainfall compare — same width as wind/temp cards, alone on its row */}
+                  {/* Row 5 (last): rainfall compare — left half width */}
                   <div style={{ height: '280px', flexShrink: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                     {renderWeatherCompareCard(WEATHER_COMPARE_ITEMS[3])}
                   </div>
                 </div>
               )}
 
-              {/* TAB: HEDONG TWO-DAY COMPARISON (same 2x2 layout as 两日对比) */}
+              {/* TAB: HEDONG TWO-DAY COMPARISON (2x3 grid: weather w/ output bars + load + price + time series) */}
               {page2Tab === 'hedong' && (
                 <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                  <div style={{ height: '560px', flexShrink: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr', gap: '10px' }}>
+                  <div style={{ height: '840px', flexShrink: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gridTemplateRows: '1fr 1fr 1fr', gap: '10px' }}>
                     {HEDONG_COMPARE_ITEMS.map(renderWeatherCompareCard)}
+                    {renderWeatherCompareCard(HEDONG_LOAD_ITEM)}
                     {renderPriceCompareCard()}
                     {renderTimeSeriesCard()}
                   </div>
@@ -2332,7 +2382,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
           </button>
         </div>
         <div className="tv-bottom-toolbar-right">
-          <span>{currentTime}</span>
+          <span><Clock /></span>
           <span style={{ fontSize: 11, fontWeight: 500, cursor: 'pointer' }}>%</span>
           <span style={{ fontSize: 11, fontWeight: 500, cursor: 'pointer' }}>log</span>
           <span style={{ fontSize: 11, fontWeight: 500, cursor: 'pointer' }}>auto</span>

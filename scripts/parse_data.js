@@ -337,14 +337,16 @@ function aggregateAndExport(ops, prices, weather, rolling) {
         const hasAll = m.load != null && m.interconnect_dayahead != null &&
                        m.wind != null && m.solar != null && m.hydro != null;
         let bs = hasAll ? (m.load + m.interconnect_dayahead - m.wind - m.solar - m.hydro) : undefined;
-        
+
         let out = {
             ...m,
             date_str: m.date,
             interconnect: m.interconnect_dayahead,
-            renewables: (m.wind || 0) + (m.solar || 0),
-            generation: (m.wind || 0) + (m.solar || 0) + (m.hydro || 0)
         };
+        // Leave renewables/generation undefined on weather-only rows — writing
+        // zeros would drag daily/weekly/monthly averages toward 0.
+        if (m.wind != null || m.solar != null) out.renewables = (m.wind || 0) + (m.solar || 0);
+        if (m.wind != null || m.solar != null || m.hydro != null) out.generation = (m.wind || 0) + (m.solar || 0) + (m.hydro || 0);
         if (bs !== undefined) out.bidding_space = bs;
         return out;
     });
@@ -361,24 +363,26 @@ function aggregateAndExport(ops, prices, weather, rolling) {
         let groups = {};
         for (let row of arr) {
             let key = keyFn(row);
-            if (!groups[key]) groups[key] = { count: 0, sum: {} };
-            groups[key].count++;
-            
+            if (!groups[key]) groups[key] = { sum: {}, count: {} };
+
             ['load', 'interconnect', 'wind', 'solar', 'hydro', 'renewables', 'generation',
                 'price_dayahead', 'price_realtime', 'wind_speed', 'solar_radiation', 'temperature', 'rainfall', 'bidding_space',
                 'hedong_wind_speed', 'hedong_solar_radiation'].forEach(col => {
                 if (row[col] !== undefined && row[col] !== null) {
                     groups[key].sum[col] = (groups[key].sum[col] || 0) + row[col];
+                    // Per-column divisor: weather-only forecast rows (no ops data)
+                    // must not dilute output/load averages.
+                    groups[key].count[col] = (groups[key].count[col] || 0) + 1;
                 }
             });
         }
-        
+
         let res = [];
         for (let key in groups) {
             let g = groups[key];
             let out = {};
             for (let col in g.sum) {
-                out[col] = g.sum[col] / g.count;
+                out[col] = g.sum[col] / g.count[col];
             }
             out.key = key;
             res.push(out);
