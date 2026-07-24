@@ -83,6 +83,11 @@ const WEATHER_TS_CFG: { [k: string]: { ts: [string, string, string, string, stri
   hydro: { ts: ['rainfall', 'hydro', '降水', '水电出力', '#2962ff'], scatter: ['rainfall', 'hydro', '降水 (mm)', '水电出力 (MW)', '#2962ff'] },
 };
 
+const HEDONG_TS_CFG: { [k: string]: { ts: [string, string, string, string, string] } } = {
+  wind:  { ts: ['hedong_wind_speed', 'wind', '风速 (河东)', '风电出力', '#0d9488'] },
+  solar: { ts: ['hedong_solar_radiation', 'solar', '辐射 (河东)', '光伏出力', '#ea580c'] },
+};
+
 const HOUR_COLORS_24 = [
   '#2563eb', // 01:00 宝蓝
   '#0284c7', // 02:00 浅蓝
@@ -145,6 +150,12 @@ const Clock = () => {
 };
 
 const fmtNum = (n: number | null | undefined) => n != null ? n.toLocaleString('en-US', { maximumFractionDigits: 0 }) : '—';
+// Axis tick formatter: no long decimals from computed min/max —
+// integers for big values, up to 2 decimals for small ones.
+const fmtAxisTick = (v: number) => {
+  if (v == null || !isFinite(v)) return '';
+  return Math.abs(v) >= 100 ? String(Math.round(v)) : String(Math.round(v * 100) / 100);
+};
 const fmtPct = (n: number | null | undefined) => {
   if (n == null) return '—';
   return `${n >= 0 ? '+' : ''}${n.toFixed(1)}%`;
@@ -190,13 +201,15 @@ function App() {
 const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
   const [isSidebarVisible, setIsSidebarVisible] = useState(true);
   const [weatherMetric, setWeatherMetric] = useState<'wind'|'solar'|'load'|'hydro'>('wind');
+  const [hedongMetric, setHedongMetric] = useState<'wind'|'solar'>('wind');
   // Page 2: two-day comparison state
   const [page2Tab, setPage2Tab] = useState<'compare' | 'correlation' | 'timeseries' | 'hedong'>('compare');
   const [compareDateA, setCompareDateA] = useState<string>('');
   const [compareDateB, setCompareDateB] = useState<string>('');
   const [comparePriceType, setComparePriceType] = useState<'price_dayahead' | 'price_realtime'>('price_dayahead');
   const [page, setPage] = useState<PageId>('page1');
-  const [activeView, setActiveView] = useState<'overview' | 'detail'>('overview');
+  const [activeView, setActiveView] = useState<'overview' | 'detail' | 'multi'>('overview');
+  const [multiDates, setMultiDates] = useState<string[]>([]);
   
   // Custom Date Modal state
   const [calendarOpen, setCalendarOpen] = useState(false);
@@ -620,6 +633,55 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
     };
   };
 
+  // -- Page 1: multi-day mean view --
+  const meanDayData = useMemo(() => {
+    if (!data || multiDates.length === 0) return [];
+    const keys = ['load', 'wind', 'solar', 'hydro', 'interconnect'];
+    const acc: Record<number, Record<string, { sum: number; n: number }>> = {};
+    const dateSet = new Set(multiDates);
+    data.hourly.forEach(r => {
+      if (!r.date || !dateSet.has(r.date) || r.period == null || r.period < 1 || r.period > 24) return;
+      if (!acc[r.period]) acc[r.period] = {};
+      keys.forEach(k => {
+        const v = (r as any)[k];
+        if (v != null && isFinite(v)) {
+          if (!acc[r.period][k]) acc[r.period][k] = { sum: 0, n: 0 };
+          acc[r.period][k].sum += v; acc[r.period][k].n++;
+        }
+      });
+    });
+    const rows: any[] = [];
+    for (let p = 1; p <= 24; p++) {
+      const row: any = { period: p };
+      keys.forEach(k => {
+        const a = acc[p]?.[k];
+        row[k] = a ? a.sum / a.n : null;
+      });
+      rows.push(row);
+    }
+    return rows;
+  }, [data, multiDates]);
+
+  const buildMultiDayChart = () => {
+    if (!meanDayData.length) return {};
+    const keys = ['load', 'wind', 'solar', 'hydro', 'interconnect'];
+    return {
+      animation: false,
+      tooltip: { trigger: 'axis', backgroundColor: '#fff', borderColor: '#e0e3eb', textStyle: { color: '#131722', fontSize: 12 },
+        valueFormatter: (v: any) => (v == null ? '-' : `${Number(v).toFixed(2)} MW`) },
+      legend: { data: keys.map(k => METRICS[k].label), top: 4, right: 20, textStyle: { color: '#131722', fontSize: 11 }, icon: 'roundRect', itemWidth: 14, itemHeight: 3, selected: legendState['day'] },
+      grid: { left: 8, right: 56, top: 36, bottom: 24, containLabel: true },
+      xAxis: { type: 'category', data: meanDayData.map(r => `${r.period}`), boundaryGap: false, axisLabel: { color: '#787b86', fontSize: 11 }, axisLine: { lineStyle: { color: '#e0e3eb' } }, splitLine: { show: true, lineStyle: { color: '#f0f3fa' } } },
+      yAxis: { type: 'value', position: 'right', axisLabel: { color: '#131722', fontSize: 11 }, splitLine: { lineStyle: { color: '#f0f3fa' } }, axisLine: { show: false }, axisTick: { show: false } },
+      series: keys.map(k => ({
+        name: METRICS[k].label, type: 'line', data: meanDayData.map(r => r[k]),
+        itemStyle: { color: METRICS[k].color }, lineStyle: { width: k === 'load' ? 2.5 : 1.5 },
+        symbol: 'circle', symbolSize: 4, connectNulls: true,
+        ...(k === 'load' ? { areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(242,54,69,0.1)' }, { offset: 1, color: 'rgba(242,54,69,0)' }] } } } : {})
+      }))
+    };
+  };
+
   // -- Page 2: Scatter + Regression --
   const buildScatterChart = (xKey: string, yKey: string, xLabel: string, yLabel: string, color: string) => {
     const raw = currentData;
@@ -638,6 +700,16 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
     const xMin = Math.min(...pairs.map(p => p[0]));
     const xMax = Math.max(...pairs.map(p => p[0]));
     const regLine = [[xMin, reg.slope * xMin + reg.intercept], [xMax, reg.slope * xMax + reg.intercept]];
+
+    // Pin axes to the data extent (+3% padding) so the point cloud fills the chart
+    const yMin = Math.min(...pairs.map(p => p[1]));
+    const yMax = Math.max(...pairs.map(p => p[1]));
+    const pad = (lo: number, hi: number): [number, number] => {
+      const p = (hi - lo) * 0.03 || 1;
+      return [lo - p, hi + p];
+    };
+    const [axXMin, axXMax] = pad(xMin, xMax);
+    const [axYMin, axYMax] = pad(yMin, yMax);
 
     return {
       animation: false,
@@ -660,14 +732,14 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
         textStyle: { color: '#131722', fontSize: 13, fontWeight: 600 },
         subtextStyle: { color: '#787b86', fontSize: 11 }
       },
-      xAxis: { type: 'value', name: xLabel, nameLocation: 'center', nameGap: 24,
+      xAxis: { type: 'value', name: xLabel, nameLocation: 'center', nameGap: 24, min: axXMin, max: axXMax,
         nameTextStyle: { color: '#787b86', fontSize: 11 },
-        axisLabel: { color: '#131722', fontSize: 10 },
+        axisLabel: { color: '#131722', fontSize: 10, formatter: fmtAxisTick },
         splitLine: { lineStyle: { color: '#f0f3fa' } },
         axisLine: { lineStyle: { color: '#e0e3eb' } } },
-      yAxis: { type: 'value', name: yLabel, nameLocation: 'center', nameGap: 44,
+      yAxis: { type: 'value', name: yLabel, nameLocation: 'center', nameGap: 44, min: axYMin, max: axYMax,
         nameTextStyle: { color: '#787b86', fontSize: 11 },
-        axisLabel: { color: '#131722', fontSize: 10 },
+        axisLabel: { color: '#131722', fontSize: 10, formatter: fmtAxisTick },
         splitLine: { lineStyle: { color: '#f0f3fa' } },
         axisLine: { show: false } },
       series: [
@@ -851,20 +923,31 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
     </div>
   );
 
-  const renderTimeSeriesCard = () => (
+  const renderTimeSeriesCard = (hedong = false) => (
     <div style={{ flex: 1, minWidth: 0, background: '#fff', borderRadius: '10px', border: '1px solid #e0e3eb', boxShadow: '0 2px 8px rgba(19,23,34,0.05)', padding: '10px 12px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-        <span style={{ fontSize: '13px', fontWeight: 600, color: '#131722' }}>气象-出力时序</span>
-        <select value={weatherMetric} onChange={e => setWeatherMetric(e.target.value as any)}
-          style={{ padding: '3px 8px', border: '1px solid #e0e3eb', borderRadius: '6px', outline: 'none', fontSize: '11px', color: '#4b5563', background: '#f5f7fa', cursor: 'pointer' }}>
-          <option value="wind">风电 vs 风速</option>
-          <option value="solar">光伏 vs 辐射</option>
-          <option value="load">负荷 vs 温度</option>
-          <option value="hydro">水电 vs 降水</option>
-        </select>
+        <span style={{ fontSize: '13px', fontWeight: 600, color: '#131722' }}>
+          气象-出力时序
+          {hedong && <span style={{ marginLeft: 6, fontSize: '10px', fontWeight: 600, color: '#0d9488', background: '#f0fdfa', border: '1px solid #99f6e4', borderRadius: '4px', padding: '1px 6px' }}>河东气象</span>}
+        </span>
+        {hedong ? (
+          <select value={hedongMetric} onChange={e => setHedongMetric(e.target.value as any)}
+            style={{ padding: '3px 8px', border: '1px solid #e0e3eb', borderRadius: '6px', outline: 'none', fontSize: '11px', color: '#4b5563', background: '#f5f7fa', cursor: 'pointer' }}>
+            <option value="wind">风电 vs 风速 (河东)</option>
+            <option value="solar">光伏 vs 辐射 (河东)</option>
+          </select>
+        ) : (
+          <select value={weatherMetric} onChange={e => setWeatherMetric(e.target.value as any)}
+            style={{ padding: '3px 8px', border: '1px solid #e0e3eb', borderRadius: '6px', outline: 'none', fontSize: '11px', color: '#4b5563', background: '#f5f7fa', cursor: 'pointer' }}>
+            <option value="wind">风电 vs 风速</option>
+            <option value="solar">光伏 vs 辐射</option>
+            <option value="load">负荷 vs 温度</option>
+            <option value="hydro">水电 vs 降水</option>
+          </select>
+        )}
       </div>
       <div style={{ flex: 1, minHeight: 0 }}>
-        <ReactECharts option={buildWeatherTimeSeriesChart(...WEATHER_TS_CFG[weatherMetric].ts)} style={{ height: '100%', width: '100%' }} notMerge />
+        <ReactECharts option={hedong ? buildWeatherTimeSeriesChart(...HEDONG_TS_CFG[hedongMetric].ts) : buildWeatherTimeSeriesChart(...WEATHER_TS_CFG[weatherMetric].ts)} style={{ height: '100%', width: '100%' }} notMerge />
       </div>
     </div>
   );
@@ -1207,10 +1290,10 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
           textStyle: { fontSize: 10, color: '#787b86' }
         },
         xAxis: { type: 'value', name: '竞价空间 (MW)', nameLocation: 'center', nameGap: 28, min: axisXMin, max: axisXMax,
-          nameTextStyle: { color: '#787b86', fontSize: 11 }, axisLabel: { color: '#131722', fontSize: 10 },
+          nameTextStyle: { color: '#787b86', fontSize: 11 }, axisLabel: { color: '#131722', fontSize: 10, formatter: fmtAxisTick },
           splitLine: { lineStyle: { color: '#f0f3fa' } } },
         yAxis: { type: 'value', name: '日前价格 (元/MWh)', nameLocation: 'center', nameGap: 40, min: axisYMin, max: axisYMax,
-          nameTextStyle: { color: '#787b86', fontSize: 11 }, axisLabel: { color: '#131722', fontSize: 10 },
+          nameTextStyle: { color: '#787b86', fontSize: 11 }, axisLabel: { color: '#131722', fontSize: 10, formatter: fmtAxisTick },
           splitLine: { lineStyle: { color: '#f0f3fa' } } },
         series: [
           { name: scaleLabel, type: 'scatter', data: pts, symbolSize: 10,
@@ -1349,7 +1432,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
         min: axisXMin,
         max: axisXMax,
         nameTextStyle: { color: '#787b86', fontSize: 12, fontWeight: 500 },
-        axisLabel: { color: '#131722', fontSize: 10 },
+        axisLabel: { color: '#131722', fontSize: 10, formatter: fmtAxisTick },
         splitLine: { lineStyle: { color: '#f0f3fa' } },
         axisLine: { lineStyle: { color: '#e0e3eb' } }
       },
@@ -1361,7 +1444,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
         min: axisYMin,
         max: axisYMax,
         nameTextStyle: { color: '#787b86', fontSize: 12, fontWeight: 500 },
-        axisLabel: { color: '#131722', fontSize: 10 },
+        axisLabel: { color: '#131722', fontSize: 10, formatter: fmtAxisTick },
         splitLine: { lineStyle: { color: '#f0f3fa' } },
         axisLine: { show: false }
       },
@@ -2097,13 +2180,13 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
     if(!filtered.length) return {};
     
     return {
-      title: { text: `时段 ${selectedRollingPeriod}:00 交易机会与流动性`, left: 8, top: 4, textStyle: { fontSize: 12 } },
-      tooltip: { 
+      tooltip: {
         trigger: 'axis',
-        axisPointer: { type: 'cross' }
+        axisPointer: { type: 'cross' },
+        valueFormatter: (v: any) => (v == null ? '-' : Number(v).toFixed(2))
       },
-      legend: { data: ['加权价差', '极值区间', '成交量'], top: 25 },
-      grid: { left: 50, right: 50, top: 60, bottom: 30 },
+      legend: { data: ['成交机会(加权价格)', '成交机会区间', '成交量'], top: 4, textStyle: { fontSize: 11, color: '#4b5563' } },
+      grid: { left: 50, right: 50, top: 36, bottom: 30 },
       xAxis: { type: 'category', data: filtered.map((d: any) => d.target_date) },
       yAxis: [
         { type: 'value', name: '价差(元/MWh)', position: 'left', splitLine: { show: true, lineStyle: { type: 'dashed', color: '#f0f0f0' } } },
@@ -2111,7 +2194,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
       ],
       series: [
         {
-          name: '加权价差',
+          name: '成交机会(加权价格)',
           type: 'line',
           data: filtered.map((d: any) => d.spread),
           itemStyle: { color: '#2962FF' },
@@ -2122,7 +2205,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
           z: 3
         },
         {
-          name: '极值区间',
+          name: '成交机会区间',
           type: 'custom',
           renderItem: function (_params: any, api: any) {
             var xValue = api.value(0);
@@ -2163,15 +2246,26 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
 
   const buildRollingScatterChart = () => {
     if (!data || !filteredRollingData || filteredRollingData.length === 0) return {};
+    // Pin axes to the data extent (+3% padding) so the point cloud fills the square
+    const vols = filteredRollingData.map((r: any) => r.volume).filter((v: any) => v != null && isFinite(v));
+    const sps = filteredRollingData.map((r: any) => r.spread).filter((v: any) => v != null && isFinite(v));
+    const padAxis = (lo: number, hi: number): [number, number] => {
+      if (!isFinite(lo) || !isFinite(hi)) return [0, 1];
+      const p = (hi - lo) * 0.03 || 1;
+      return [lo - p, hi + p];
+    };
+    const [xMin, xMax] = padAxis(Math.min(...vols), Math.max(...vols));
+    const [yMin, yMax] = padAxis(Math.min(...sps), Math.max(...sps));
     return {
-      title: { text: '全时段 成交量 vs 价差分布', left: 8, top: 4, textStyle: { fontSize: 12 } },
-      tooltip: { 
+      tooltip: {
         trigger: 'item',
-        formatter: (p: any) => `日期: ${p.data[2]}<br/>时段: ${p.data[3]}:00<br/>成交量: ${p.data[0]}<br/>价差: ${p.data[1].toFixed(2)}`
+        formatter: (p: any) => `日期: ${p.data[2]}<br/>时段: ${p.data[3]}:00<br/>成交量: ${Number(p.data[0]).toFixed(2)}<br/>成交机会: ${p.data[1].toFixed(2)}`
       },
-      grid: { left: 50, right: 30, top: 40, bottom: 40 },
-      xAxis: { type: 'value', name: '成交量(MWh)', nameLocation: 'middle', nameGap: 25, splitLine: { show: false } },
-      yAxis: { type: 'value', name: '价差(元/MWh)', splitLine: { show: true, lineStyle: { type: 'dashed', color: '#f0f0f0' } } },
+      grid: { left: 50, right: 30, top: 20, bottom: 40 },
+      xAxis: { type: 'value', name: '成交量(MWh)', nameLocation: 'middle', nameGap: 25, min: xMin, max: xMax, splitLine: { show: false },
+        axisLabel: { formatter: fmtAxisTick } },
+      yAxis: { type: 'value', name: '成交机会(元/MWh)', min: yMin, max: yMax, splitLine: { show: true, lineStyle: { type: 'dashed', color: '#f0f0f0' } },
+        axisLabel: { formatter: fmtAxisTick } },
       visualMap: {
         show: false,
         dimension: 1,
@@ -2225,6 +2319,9 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
               <button className={`tv-toolbar-btn${activeView === 'detail' ? ' active-scale' : ''}`}
                 onClick={() => setActiveView('detail')}
                 style={activeView === 'detail' ? { color: '#2962ff', fontWeight: 600 } : {}}>单日详情</button>
+              <button className={`tv-toolbar-btn${activeView === 'multi' ? ' active-scale' : ''}`}
+                onClick={() => setActiveView('multi')}
+                style={activeView === 'multi' ? { color: '#2962ff', fontWeight: 600 } : {}}>多日均值</button>
             </>
           )}
         </div>
@@ -2267,18 +2364,64 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
           )}
 
           {page === 'page1' && activeView === 'detail' && (
-            <>
-
-              <div style={{ position: 'absolute', top: 8, right: 64, zIndex: 10 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', boxSizing: 'border-box' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0, padding: '6px 12px 2px' }}>
+                <span style={{ fontSize: '13px', fontWeight: 600, color: '#131722' }}>单日详情</span>
                 <select value={selectedDate || ''} onChange={e => setSelectedDate(e.target.value)}
-                  style={{ padding: '4px 8px', fontSize: 12, border: '1px solid #e0e3eb', borderRadius: 4, background: '#fff', color: '#131722' }}>
+                  style={{ padding: '3px 8px', fontSize: 12, border: '1px solid #e0e3eb', borderRadius: 4, background: '#fff', color: '#131722' }}>
                   {availableDates.slice(-60).map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
               </div>
-              <div style={{ height: '100%', paddingTop: 4 }}>
+              <div style={{ flex: 1, minHeight: 0 }}>
                 <ReactECharts option={buildDayChart()} style={{ height: '100%' }} onEvents={{ legendselectchanged: (p: any) => handleLegendSelect('day', p) }} notMerge />
               </div>
-            </>
+            </div>
+          )}
+
+          {page === 'page1' && activeView === 'multi' && (
+            <div style={{ display: 'flex', height: '100%', gap: '10px', padding: '8px', boxSizing: 'border-box' }}>
+              {/* Date multi-select sidebar */}
+              <div style={{ width: '190px', flexShrink: 0, background: '#fff', borderRadius: '8px', border: '1px solid #e0e3eb', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div style={{ padding: '10px 12px 6px', flexShrink: 0 }}>
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: '#131722' }}>选择日期 <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 400 }}>已选 {multiDates.length} 天</span></div>
+                  <div style={{ display: 'flex', gap: '6px', marginTop: '6px' }}>
+                    <button onClick={() => setMultiDates([...availableDates].slice(-7))}
+                      style={{ flex: 1, padding: '2px 0', fontSize: '11px', border: '1px solid #e0e3eb', borderRadius: '5px', background: '#f5f7fa', color: '#4b5563', cursor: 'pointer' }}>近7天</button>
+                    <button onClick={() => setMultiDates([...availableDates].slice(-30))}
+                      style={{ flex: 1, padding: '2px 0', fontSize: '11px', border: '1px solid #e0e3eb', borderRadius: '5px', background: '#f5f7fa', color: '#4b5563', cursor: 'pointer' }}>近30天</button>
+                    <button onClick={() => setMultiDates([])}
+                      style={{ flex: 1, padding: '2px 0', fontSize: '11px', border: '1px solid #e0e3eb', borderRadius: '5px', background: '#f5f7fa', color: '#4b5563', cursor: 'pointer' }}>清空</button>
+                  </div>
+                </div>
+                <div style={{ flex: 1, overflowY: 'auto', padding: '4px 8px 8px' }}>
+                  {[...availableDates].reverse().map(d => {
+                    const checked = multiDates.includes(d);
+                    return (
+                      <label key={d} style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '2px 4px', fontSize: '12px', cursor: 'pointer', borderRadius: '4px', color: checked ? '#131722' : '#787b86', fontWeight: checked ? 600 : 400, background: checked ? '#f0f3fa' : 'transparent' }}>
+                        <input type="checkbox" checked={checked} style={{ cursor: 'pointer' }}
+                          onChange={() => setMultiDates(prev => checked ? prev.filter(x => x !== d) : [...prev, d].sort())} />
+                        {d}
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Mean chart */}
+              <div style={{ flex: 1, minWidth: 0, background: '#fff', borderRadius: '8px', border: '1px solid #e0e3eb', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ padding: '8px 12px 0', flexShrink: 0, fontSize: '13px', fontWeight: 600, color: '#131722' }}>
+                  边界条件多日均值
+                  <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 400, marginLeft: 8 }}>
+                    {multiDates.length ? `${multiDates[0]} ~ ${multiDates[multiDates.length - 1]} · ${multiDates.length}天逐时均值` : '请在左侧选择至少一个日期'}
+                  </span>
+                </div>
+                <div style={{ flex: 1, minHeight: 0 }}>
+                  {multiDates.length > 0
+                    ? <ReactECharts option={buildMultiDayChart()} style={{ height: '100%' }} onEvents={{ legendselectchanged: (p: any) => handleLegendSelect('day', p) }} notMerge />
+                    : <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9ca3af', fontSize: '13px' }}>未选择日期</div>}
+                </div>
+              </div>
+            </div>
           )}
 
           {/* ===== PAGE 2: WEATHER — TWO-DAY COMPARE / CORRELATION ===== */}
@@ -2371,7 +2514,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
                     {HEDONG_COMPARE_ITEMS.map(renderWeatherCompareCard)}
                     {renderWeatherCompareCard(HEDONG_LOAD_ITEM)}
                     {renderPriceCompareCard()}
-                    {renderTimeSeriesCard()}
+                    {renderTimeSeriesCard(true)}
                   </div>
                 </div>
               )}
@@ -2647,12 +2790,22 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
               <div style={{ fontSize: '12px', color: '#9ca3af', textAlign: 'center', marginTop: '8px' }}>提示: 点击热力图中的色块，即可在下方查看对应时段的深度剖析</div>
             </div>
             
-            <div style={{ display: 'flex', gap: '16px', height: '600px', flexShrink: 0 }}>
-              <div style={{ background: '#fff', borderRadius: '4px', border: '1px solid #e0e3eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', padding: '16px', flex: 1 }}>
-                <ReactECharts option={buildRollingVolatilityChart()} style={{ height: '100%', width: '100%', minHeight: '500px' }} notMerge={true} />
+            <div style={{ display: 'flex', gap: '16px', flexShrink: 0 }}>
+              <div style={{ background: '#fff', borderRadius: '4px', border: '1px solid #e0e3eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', padding: '12px 16px', flex: 2, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: '#131722', flexShrink: 0 }}>
+                  时段 {selectedRollingPeriod}:00 交易机会与流动性
+                  <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 400, marginLeft: 8 }}>随上方热力图点击联动</span>
+                </div>
+                <div style={{ flex: 1, minHeight: 0 }}>
+                  <ReactECharts option={buildRollingVolatilityChart()} style={{ height: '100%', width: '100%' }} notMerge={true} />
+                </div>
               </div>
-              <div style={{ background: '#fff', borderRadius: '4px', border: '1px solid #e0e3eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', padding: '16px', width: '33.333%' }}>
-                <ReactECharts option={buildRollingScatterChart()} style={{ height: '100%', width: '100%', minHeight: '500px' }} notMerge={true} />
+              <div style={{ background: '#fff', borderRadius: '4px', border: '1px solid #e0e3eb', boxShadow: '0 1px 2px rgba(0,0,0,0.05)', padding: '12px 16px', flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: '#131722', flexShrink: 0 }}>成交机会 vs 成交量</div>
+                {/* Square plot area: height follows card width, no extra whitespace */}
+                <div style={{ width: '100%', aspectRatio: '1 / 1' }}>
+                  <ReactECharts option={buildRollingScatterChart()} style={{ height: '100%', width: '100%' }} notMerge={true} />
+                </div>
               </div>
             </div>
           </div>
