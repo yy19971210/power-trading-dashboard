@@ -305,6 +305,45 @@ function parseRolling(prices) {
     return records;
 }
 
+// 5. Node prices (日前节点信息) — one sheet per node:
+// 日期 | 时刻 | 设备 | 节点电价 | 电能价格 | 阻塞价格 | 网损价格 | 总电量
+function parseNodePrices() {
+    const dir = path.join(DATA_ROOT, "日前节点信息");
+    const files = getFiles(dir, ".xlsx").sort();
+    let map = {}; // key: date_period_node → record (dedupe, last wins)
+    for (const file of files) {
+        console.log(`  Reading node prices: ${path.basename(file)}`);
+        const workbook = xlsx.readFile(file);
+        for (const sheetName of workbook.SheetNames) {
+            const data = xlsx.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: true });
+            for (let i = 1; i < data.length; i++) {
+                const r = data[i];
+                if (!r || r[0] == null || r[1] == null) continue;
+                const np = Number(r[3]);
+                if (r[3] == null || isNaN(np)) continue; // junk sheets have null prices
+                const pm = String(r[1]).match(/(\d+)/);
+                if (!pm) continue;
+                const node = String(r[2] || sheetName).trim();
+                if (!node) continue;
+                const dateStr = dayjs(r[0]).format('YYYY-MM-DD');
+                const round2 = v => (v == null || isNaN(Number(v))) ? null : Math.round(Number(v) * 100) / 100;
+                map[`${dateStr}_${pm[1]}_${node}`] = {
+                    date: dateStr,
+                    period: parseInt(pm[1], 10),
+                    node,
+                    node_price: round2(r[3]),
+                    energy_price: round2(r[4]),
+                    congestion_price: round2(r[5]),
+                };
+            }
+        }
+    }
+    const hourly = Object.values(map).sort((a, b) =>
+        a.date < b.date ? -1 : a.date > b.date ? 1 : a.period - b.period || a.node.localeCompare(b.node));
+    const nodes = [...new Set(hourly.map(r => r.node))].sort();
+    return { nodes, hourly };
+}
+
 function aggregateAndExport(ops, prices, weather, rolling) {
     let result = {};
     
@@ -455,6 +494,18 @@ try {
 
 console.log("Aggregating and exporting...");
 let result = aggregateAndExport(ops, prices, weather, rolling);
+
+console.log("Parsing node price data...");
+const NODES_OUT = path.join(DATA_ROOT, "power-trading-dashboard", "public", "nodes.json");
+try {
+    const nodeData = parseNodePrices();
+    fs.mkdirSync(path.dirname(NODES_OUT), { recursive: true });
+    fs.writeFileSync(NODES_OUT, JSON.stringify(nodeData), 'utf-8');
+    const ns = fs.statSync(NODES_OUT).size / (1024 * 1024);
+    console.log(`  Nodes: ${nodeData.nodes.length} nodes, ${nodeData.hourly.length} records (${ns.toFixed(2)} MB)`);
+} catch (e) {
+    console.log(`  Node price parsing failed: ${e}`);
+}
 
 // write result
 fs.mkdirSync(path.dirname(OUT_FILE), { recursive: true });

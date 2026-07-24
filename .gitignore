@@ -35,3 +35,4 @@ scripts/*.xlsx
 .env.development.local
 .env.test.local
 .env.production.local
+public/nodes.json

@@ -2,7 +2,10 @@ import { useEffect, useState, useMemo } from 'react';
 import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts';
 import dayjs from 'dayjs';
+import isoWeek from 'dayjs/plugin/isoWeek';
 import './App.css';
+
+dayjs.extend(isoWeek);
 
 // ===============================
 // Types
@@ -22,7 +25,14 @@ interface DataPayload {
   meta: { total_hourly_records: number; date_range: { start: string; end: string }; generated_at: string; total_daily_records: number; total_weekly_records: number; total_monthly_records: number; };
 }
 type TimeScale = 'hourly' | 'daily' | 'weekly' | 'monthly';
-type PageId = 'page1' | 'page2' | 'page3' | 'page4' | 'page5' | 'page6' | 'page7';
+type PageId = 'page1' | 'page2' | 'page3' | 'page4' | 'page5' | 'page6' | 'page7' | 'page8';
+
+// 日前节点信息 (congestion analysis)
+interface NodeRecord {
+  date: string; period: number; node: string;
+  node_price: number | null; energy_price: number | null; congestion_price: number | null;
+}
+interface NodePayload { nodes: string[]; hourly: NodeRecord[]; }
 
 // ===============================
 // Constants
@@ -115,6 +125,7 @@ const PAGE_BTNS: { key: PageId; label: string }[] = [
   { key: 'page5', label: '日前结算价差' },
   { key: 'page6', label: '日滚动交易机会' },
   { key: 'page7', label: '策略：价差套利' },
+  { key: 'page8', label: '阻塞分析' },
 ];
 
 // ===============================
@@ -160,13 +171,17 @@ function linearRegression(data: [number, number, any?][]): { slope: number; inte
 // ===============================
 function App() {
   const [data, setData] = useState<DataPayload | null>(null);
+  const [nodeData, setNodeData] = useState<NodePayload | null>(null);
+  const [selectedNode, setSelectedNode] = useState<string>('甘肃.沙河变/220kV.220kV乙母');
+  const [nodeSearch, setNodeSearch] = useState('');
+  const [selectedHours, setSelectedHours] = useState<number[]>([1]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [timeScale, setTimeScale] = useState<TimeScale>('hourly');
   const [dateRange, setDateRange] = useState<string>('1M');
   const [selectedBiddingHours, setSelectedBiddingHours] = useState<number[]>([]);
   const [lastClickedHour, setLastClickedHour] = useState<number | null>(null);
-  const [colorByHour, setColorByHour] = useState<boolean>(true);
+  const [colorMode, setColorMode] = useState<'hour' | 'price' | 'date'>('hour');
   
   // Page 5 specific state
   const [selectedArbitragePair, setSelectedArbitragePair] = useState<[number, number]>([4, 19]);
@@ -283,6 +298,10 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
       .then(r => r.json())
       .then((d: DataPayload) => { setData(d); setLoading(false); })
       .catch(e => { setError(e.message); setLoading(false); });
+    fetch('/nodes.json')
+      .then(r => r.ok ? r.json() : null)
+      .then((d: NodePayload | null) => { if (d) setNodeData(d); })
+      .catch(() => {});
   }, []);
 
   const currentData = useMemo(() => {
@@ -850,6 +869,216 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
     </div>
   );
 
+  // -- Page 8: Congestion (阻塞) analysis --
+  // spread = node day-ahead clearing price - unified settlement day-ahead price
+  const unifiedPriceMap = useMemo(() => {
+    const m: Record<string, number> = {};
+    if (data) data.hourly.forEach(r => {
+      if (r.date && r.period != null && r.price_dayahead != null) m[`${r.date}_${r.period}`] = r.price_dayahead;
+    });
+    return m;
+  }, [data]);
+
+  // Node records restricted to the date window implied by the global range selector
+  const nodeRangeData = useMemo(() => {
+    if (!nodeData) return [] as (NodeRecord & { unified: number | null; spread: number | null })[];
+    let allowed: Set<string> | null = null;
+    if (dateRange !== 'All' && (timeScale === 'hourly' || timeScale === 'daily') && currentData.length) {
+      allowed = new Set(currentData.map((r: any) => r.date).filter(Boolean));
+    }
+    return nodeData.hourly
+      .filter(r => !allowed || allowed.has(r.date))
+      .map(r => {
+        const unified = unifiedPriceMap[`${r.date}_${r.period}`] ?? null;
+        return { ...r, unified, spread: r.node_price != null && unified != null ? r.node_price - unified : null };
+      });
+  }, [nodeData, unifiedPriceMap, currentData, dateRange, timeScale]);
+
+  const nodeStats = useMemo(() => {
+    const rows = nodeRangeData.filter(r => r.node === selectedNode && r.spread != null);
+    if (!rows.length) return null;
+    const spreads = rows.map(r => r.spread as number);
+    const avg = spreads.reduce((a, b) => a + b, 0) / spreads.length;
+    let max = -Infinity, maxRow: typeof rows[0] | null = null;
+    rows.forEach(r => { if ((r.spread as number) > max) { max = r.spread as number; maxRow = r; } });
+    const freq = spreads.filter(s => s > 0).length / spreads.length * 100;
+    return { avg, max, maxTime: maxRow ? `${maxRow.date} ${String(maxRow.period).padStart(2, '0')}:00` : '-', freq };
+  }, [nodeRangeData, selectedNode]);
+
+  const buildNodeCompareChart = () => {
+    const rows = nodeRangeData.filter(r => r.node === selectedNode);
+    const xData = rows.map(r => `${r.date.slice(5)} ${String(r.period).padStart(2, '0')}时`);
+    return {
+      tooltip: { trigger: 'axis', backgroundColor: 'rgba(19,23,34,0.92)', borderWidth: 0, textStyle: { color: '#fff', fontSize: 12 },
+        formatter: (params: any[]) => {
+          if (!params || !params.length) return '';
+          const i = params[0].dataIndex;
+          const r = rows[i];
+          const lines = [`${r.date} ${String(r.period).padStart(2, '0')}:00`];
+          params.forEach((p: any) => lines.push(`${p.marker} ${p.seriesName}: ${p.value == null ? '-' : Number(p.value).toFixed(2)} 元/MWh`));
+          if (r.congestion_price != null) lines.push(`<span style="opacity:.7">阻塞分量: ${r.congestion_price.toFixed(2)} 元/MWh</span>`);
+          return lines.join('<br/>');
+        } },
+      legend: { data: ['节点电价', '统一结算价', '价差'], top: 0, left: 'center', textStyle: { fontSize: 11, color: '#4b5563' } },
+      grid: { left: 55, right: 55, top: 30, bottom: 24 },
+      xAxis: { type: 'category', data: xData, axisLabel: { fontSize: 9, color: '#787b86' }, axisLine: { lineStyle: { color: '#e0e3eb' } } },
+      yAxis: [
+        { type: 'value', name: '元/MWh', scale: true, nameTextStyle: { fontSize: 9, color: '#787b86' }, axisLabel: { fontSize: 9, color: '#787b86' }, splitLine: { lineStyle: { color: '#f0f3fa' } } },
+        { type: 'value', name: '价差', scale: true, nameTextStyle: { fontSize: 9, color: '#787b86' }, axisLabel: { fontSize: 9, color: '#787b86' }, splitLine: { show: false } }
+      ],
+      series: [
+        { name: '价差', type: 'bar', yAxisIndex: 1, data: rows.map(r => r.spread),
+          itemStyle: { color: (p: any) => (p.value ?? 0) >= 0 ? 'rgba(242,54,69,0.55)' : 'rgba(8,153,129,0.55)' } },
+        { name: '节点电价', type: 'line', data: rows.map(r => r.node_price), symbol: 'none', lineStyle: { width: 2, color: '#2962ff' }, itemStyle: { color: '#2962ff' } },
+        { name: '统一结算价', type: 'line', data: rows.map(r => r.unified), symbol: 'none', lineStyle: { width: 1.5, color: '#94a3b8', type: 'dashed' }, itemStyle: { color: '#94a3b8' } }
+      ]
+    };
+  };
+
+  const nodeRanking = useMemo(() => {
+    const acc: Record<string, { sum: number; n: number }> = {};
+    nodeRangeData.forEach(r => {
+      if (r.spread == null) return;
+      if (!acc[r.node]) acc[r.node] = { sum: 0, n: 0 };
+      acc[r.node].sum += r.spread; acc[r.node].n++;
+    });
+    return Object.entries(acc)
+      .map(([node, v]) => ({ node, avg: v.sum / v.n }))
+      .sort((a, b) => b.avg - a.avg)
+      .slice(0, 20);
+  }, [nodeRangeData]);
+
+  const buildNodeRankChart = () => ({
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, backgroundColor: 'rgba(19,23,34,0.92)', borderWidth: 0, textStyle: { color: '#fff', fontSize: 12 },
+      formatter: (p: any) => `${p[0].name}<br/>平均价差: <b>${Number(p[0].value).toFixed(2)}</b> 元/MWh<br/><span style="opacity:.7;font-size:11px">点击切换选中节点</span>` },
+    grid: { left: 8, right: 40, top: 8, bottom: 8, containLabel: true },
+    xAxis: { type: 'value', axisLabel: { fontSize: 9, color: '#787b86' }, splitLine: { lineStyle: { color: '#f0f3fa' } } },
+    yAxis: { type: 'category', inverse: true, data: nodeRanking.map(d => d.node),
+      axisLabel: { fontSize: 9, color: (v: string) => v === selectedNode ? '#2962ff' : '#4b5563', formatter: (v: string) => v.length > 18 ? v.slice(0, 18) + '…' : v } },
+    series: [{ type: 'bar', data: nodeRanking.map(d => ({ value: Number(d.avg.toFixed(2)), itemStyle: { color: d.node === selectedNode ? '#2962ff' : d.avg >= 0 ? '#f23645' : '#089981' } })), barWidth: '60%' }]
+  });
+
+  const buildNodeHeatmap = () => {
+    if (!nodeData || !nodeRangeData.length) return {};
+    // anchor day: latest date inside the current range
+    const dates = [...new Set(nodeRangeData.map(r => r.date))].sort();
+    const day = (selectedDate && dates.includes(selectedDate)) ? selectedDate : dates[dates.length - 1];
+    const rows = nodeRangeData.filter(r => r.date === day && r.spread != null);
+    // top 30 nodes by mean |spread| that day
+    const acc: Record<string, { sum: number; n: number }> = {};
+    rows.forEach(r => { if (!acc[r.node]) acc[r.node] = { sum: 0, n: 0 }; acc[r.node].sum += Math.abs(r.spread as number); acc[r.node].n++; });
+    const nodes = Object.entries(acc).sort((a, b) => b[1].sum / b[1].n - a[1].sum / a[1].n).slice(0, 30).map(e => e[0]);
+    const nodeIdx: Record<string, number> = {}; nodes.forEach((n, i) => nodeIdx[n] = i);
+    const cells = rows.filter(r => nodeIdx[r.node] !== undefined).map(r => [r.period - 1, nodeIdx[r.node], Number((r.spread as number).toFixed(2))]);
+    const maxAbs = Math.max(10, ...cells.map(c => Math.abs(c[2])));
+    return {
+      tooltip: { backgroundColor: 'rgba(19,23,34,0.92)', borderWidth: 0, textStyle: { color: '#fff', fontSize: 12 },
+        formatter: (p: any) => `${nodes[p.value[1]]}<br/>${day} ${String(p.value[0] + 1).padStart(2, '0')}:00<br/>价差: <b>${p.value[2]}</b> 元/MWh` },
+      grid: { left: 8, right: 60, top: 8, bottom: 24, containLabel: true },
+      xAxis: { type: 'category', data: Array.from({ length: 24 }, (_, i) => `${i + 1}时`), axisLabel: { fontSize: 9, color: '#787b86' }, splitArea: { show: false } },
+      yAxis: { type: 'category', data: nodes, axisLabel: { fontSize: 9, color: '#4b5563', formatter: (v: string) => v.length > 16 ? v.slice(0, 16) + '…' : v } },
+      visualMap: { min: -maxAbs, max: maxAbs, calculable: true, orient: 'vertical', right: 4, top: 'center',
+        textStyle: { fontSize: 9, color: '#787b86' },
+        inRange: { color: ['#089981', '#f5f7fa', '#f23645'] } },
+      series: [{ type: 'heatmap', data: cells, label: { show: false }, itemStyle: { borderColor: '#fff', borderWidth: 1 } }]
+    };
+  };
+
+  // -- Page 8: daily evolution (date x 24h) for the selected node --
+  const HOUR_LINE_COLORS = ['#2563eb', '#f97316', '#089981', '#d946ef', '#eab308', '#dc2626', '#0ea5e9', '#84cc16', '#8b5cf6', '#f43f5e'];
+  const [lastClickedNodeHour, setLastClickedNodeHour] = useState<number | null>(null);
+
+  const nodeDailyGrid = useMemo(() => {
+    // spread matrix for selectedNode: dates[] x 24
+    const rows = nodeRangeData.filter(r => r.node === selectedNode);
+    const dates = [...new Set(rows.map(r => r.date))].sort();
+    const di: Record<string, number> = {}; dates.forEach((d, i) => di[d] = i);
+    const grid: (number | null)[][] = dates.map(() => new Array(24).fill(null));
+    rows.forEach(r => { if (r.period >= 1 && r.period <= 24) grid[di[r.date]][r.period - 1] = r.spread; });
+    return { dates, grid };
+  }, [nodeRangeData, selectedNode]);
+
+  const toggleHour = (h: number) => {
+    setSelectedHours(prev => {
+      if (prev.includes(h)) return prev.length > 1 ? prev.filter(x => x !== h) : prev;
+      return [...prev, h].sort((a, b) => a - b);
+    });
+  };
+
+  // pill selection: plain = single, Ctrl = toggle add/remove, Shift = range from last click
+  const handleNodeHourClick = (h: number, e: React.MouseEvent) => {
+    if (e.shiftKey && lastClickedNodeHour !== null) {
+      const start = Math.min(lastClickedNodeHour, h);
+      const end = Math.max(lastClickedNodeHour, h);
+      const range = Array.from({ length: end - start + 1 }, (_, i) => start + i);
+      setSelectedHours(prev => Array.from(new Set([...prev, ...range])).sort((a, b) => a - b));
+    } else if (e.ctrlKey || e.metaKey) {
+      toggleHour(h);
+    } else {
+      setSelectedHours([h]);
+    }
+    setLastClickedNodeHour(h);
+  };
+
+  const buildNodeDailyHeatmap = () => {
+    const { dates, grid } = nodeDailyGrid;
+    // newest date at the bottom: reverse display order
+    const yDates = [...dates].reverse();
+    const cells: any[] = [];
+    grid.forEach((row, y) => row.forEach((v, x) => { if (v != null) cells.push([x, dates.length - 1 - y, Number(v.toFixed(2))]); }));
+    const maxAbs = Math.max(10, ...cells.map(c => Math.abs(c[2])));
+    return {
+      tooltip: { backgroundColor: 'rgba(19,23,34,0.92)', borderWidth: 0, textStyle: { color: '#fff', fontSize: 12 },
+        formatter: (p: any) => `${selectedNode}<br/>${yDates[p.value[1]]} ${String(p.value[0] + 1).padStart(2, '0')}:00<br/>价差: <b>${p.value[2]}</b> 元/MWh<br/><span style="opacity:.7;font-size:11px">点击将此小时加入下方趋势</span>` },
+      grid: { left: 8, right: 56, top: 8, bottom: 24, containLabel: true },
+      xAxis: { type: 'category', data: Array.from({ length: 24 }, (_, i) => `${i + 1}时`), axisLabel: { fontSize: 9, color: '#787b86' } },
+      yAxis: { type: 'category', data: yDates.map(d => d.slice(5)), axisLabel: { fontSize: 9, color: '#787b86' } },
+      visualMap: { min: -maxAbs, max: maxAbs, calculable: true, orient: 'vertical', right: 2, top: 'center',
+        textStyle: { fontSize: 9, color: '#787b86' }, inRange: { color: ['#089981', '#f5f7fa', '#f23645'] } },
+      series: [{ type: 'heatmap', data: cells, label: { show: false }, itemStyle: { borderColor: '#fff', borderWidth: 1 } }]
+    };
+  };
+
+  // first-3-days vs last-3-days average spread per selected hour
+  const hourEvolutionStats = useMemo(() => {
+    const { dates, grid } = nodeDailyGrid;
+    const k = Math.min(3, Math.floor(dates.length / 2) || 1);
+    return selectedHours.map(h => {
+      const col = grid.map(row => row[h - 1]);
+      const first = col.slice(0, k).filter((v): v is number => v != null);
+      const last = col.slice(-k).filter((v): v is number => v != null);
+      const fa = first.length ? first.reduce((a, b) => a + b, 0) / first.length : null;
+      const la = last.length ? last.reduce((a, b) => a + b, 0) / last.length : null;
+      return { hour: h, firstAvg: fa, lastAvg: la, delta: fa != null && la != null ? la - fa : null };
+    });
+  }, [nodeDailyGrid, selectedHours]);
+
+  const buildNodeHourTrendChart = () => {
+    const { dates, grid } = nodeDailyGrid;
+    const ma7 = (col: (number | null)[]) => col.map((_, i) => {
+      const win = col.slice(Math.max(0, i - 6), i + 1).filter((v): v is number => v != null);
+      return win.length ? Number((win.reduce((a, b) => a + b, 0) / win.length).toFixed(2)) : null;
+    });
+    const series: any[] = [];
+    selectedHours.forEach((h, idx) => {
+      const color = HOUR_LINE_COLORS[idx % HOUR_LINE_COLORS.length];
+      const col = grid.map(row => row[h - 1]);
+      series.push({ name: `${h}时`, type: 'line', data: col, connectNulls: true, symbol: 'circle', symbolSize: 4,
+        lineStyle: { width: 2, color }, itemStyle: { color } });
+      series.push({ name: `${h}时 MA7`, type: 'line', data: ma7(col), connectNulls: true, symbol: 'none',
+        lineStyle: { width: 1.5, color, type: 'dashed', opacity: 0.6 }, itemStyle: { color } });
+    });
+    return {
+      tooltip: { trigger: 'axis', backgroundColor: 'rgba(19,23,34,0.92)', borderWidth: 0, textStyle: { color: '#fff', fontSize: 12 },
+        valueFormatter: (v: any) => (v == null ? '-' : `${Number(v).toFixed(2)} 元`) },
+      legend: { data: selectedHours.map(h => `${h}时`), top: 0, left: 'center', textStyle: { fontSize: 10, color: '#4b5563' }, itemWidth: 14, itemHeight: 3 },
+      grid: { left: 48, right: 16, top: 26, bottom: 22 },
+      xAxis: { type: 'category', data: dates.map(d => d.slice(5)), axisLabel: { fontSize: 9, color: '#787b86' }, axisLine: { lineStyle: { color: '#e0e3eb' } } },
+      yAxis: { type: 'value', scale: true, name: '价差 元/MWh', nameTextStyle: { fontSize: 9, color: '#787b86' }, axisLabel: { fontSize: 9, color: '#787b86' }, splitLine: { lineStyle: { color: '#f0f3fa' } } },
+      series
+    };
+  };
+
   // -- Page 3: Bidding Space vs Price --
   const buildBiddingChart = () => {
     if (!data || !data.hourly || data.hourly.length === 0) return {};
@@ -878,6 +1107,120 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
 
     const filtered = data.hourly.filter(r => r.date && r.date >= minDate && r.date <= maxDate);
 
+    // Global bounds over the full window — axes stay fixed across all four
+    // time scales and across hour-pill selections.
+    let globalMinX = Infinity, globalMaxX = -Infinity;
+    let globalMinY = Infinity, globalMaxY = -Infinity;
+    filtered.forEach(r => {
+      const bs = r.bidding_space, price = r.price_dayahead;
+      if (bs != null && price != null && isFinite(bs) && isFinite(price)) {
+        if (bs < globalMinX) globalMinX = bs;
+        if (bs > globalMaxX) globalMaxX = bs;
+        if (price < globalMinY) globalMinY = price;
+        if (price > globalMaxY) globalMaxY = price;
+      }
+    });
+    const padAxis = (lo: number, hi: number): [number, number] => {
+      if (!isFinite(lo) || !isFinite(hi)) return [0, 1];
+      const p = (hi - lo) * 0.03 || 1;
+      return [lo - p, hi + p];
+    };
+    const [axisXMin, axisXMax] = padAxis(globalMinX, globalMaxX);
+    const [axisYMin, axisYMax] = padAxis(globalMinY, globalMaxY);
+
+    // Date color-band: use day-index (0..N) so visualMap never shows raw timestamps
+    const winStart = dayjs(minDate);
+    const winDays = Math.max(1, dayjs(maxDate).diff(winStart, 'day'));
+    const dateVisualMap = (dimension: number, seriesIndex: number | number[]) => ({
+      type: 'continuous' as const,
+      seriesIndex,
+      dimension,
+      min: 0,
+      max: winDays,
+      calculable: false,
+      orient: 'vertical' as const,
+      right: 10,
+      top: 60,
+      itemHeight: 120,
+      inRange: { color: ['#2563eb', '#06b6d4', '#22c55e', '#eab308', '#f97316', '#ef4444'] },
+      text: ['末期', '早期'],
+      textStyle: { fontSize: 10, color: '#787b86' }
+    });
+
+    // Aggregated scales (日均值/周均值/月均值): aggregate the SAME hourly window
+    if (timeScale !== 'hourly') {
+      const scaleLabel = timeScale === 'daily' ? '日均值' : timeScale === 'weekly' ? '周均值' : '月均值';
+      const groups: Record<string, { bs: number[]; pr: number[]; t: number }> = {};
+      filtered.forEach(r => {
+        if (r.bidding_space == null || r.price_dayahead == null || !isFinite(r.bidding_space) || !isFinite(r.price_dayahead)) return;
+        const d = dayjs(r.date);
+        const key = timeScale === 'daily' ? r.date!
+          : timeScale === 'weekly' ? `${d.isoWeekYear()}-W${String(d.isoWeek()).padStart(2, '0')}`
+          : d.format('YYYY-MM');
+        const dayIdx = d.diff(winStart, 'day');
+        if (!groups[key]) groups[key] = { bs: [], pr: [], t: dayIdx };
+        groups[key].bs.push(r.bidding_space);
+        groups[key].pr.push(r.price_dayahead);
+        if (dayIdx < groups[key].t) groups[key].t = dayIdx;
+      });
+      const mean = (a: number[]) => a.reduce((s, v) => s + v, 0) / a.length;
+      const pts: [number, number, string, number][] = Object.keys(groups).sort()
+        .map(k => [mean(groups[k].bs), mean(groups[k].pr), k, groups[k].t]);
+      const regPairs = pts.map(p => [p[0], p[1], p[2]] as [number, number, string]);
+      const reg = regPairs.length >= 2 ? linearRegression(regPairs) : { slope: 0, intercept: 0, r2: 0 };
+      let regLine: [number, number][] = [];
+      if (regPairs.length >= 2) {
+        const xMin = Math.min(...regPairs.map(p => p[0]));
+        const xMax = Math.max(...regPairs.map(p => p[0]));
+        regLine = [[xMin, reg.slope * xMin + reg.intercept], [xMax, reg.slope * xMax + reg.intercept]];
+      }
+      return {
+        animation: false,
+        tooltip: {
+          trigger: 'item',
+          formatter: (p: any) => {
+            const v = p.value || [];
+            return `<div style="font-weight:600;margin-bottom:4px">${v[2] || '—'}</div>
+                    <div style="font-size:12px;line-height:1.6;">
+                      <div><span style="color:#787b86">竞价空间: </span><b style="color:#131722">${Number(v[0]).toFixed(0)} MW</b></div>
+                      <div><span style="color:#787b86">日前价格: </span><b style="color:#131722">${Number(v[1]).toFixed(2)} 元/MWh</b></div>
+                    </div>`;
+          },
+          backgroundColor: '#fff', borderColor: '#e0e3eb', textStyle: { color: '#131722', fontSize: 12 },
+          extraCssText: 'box-shadow: 0 4px 12px rgba(0,0,0,0.15); border-radius: 6px; padding: 10px;'
+        },
+        grid: { left: 16, right: colorMode === 'hour' ? 30 : 60, top: 40, bottom: 40, containLabel: true },
+        title: {
+          text: `日前竞价空间 vs 日前价格 散点分布图（${scaleLabel}）  |  范围: ${minDate} 至 ${maxDate} | N = ${pts.length} | R² = ${reg.r2.toFixed(4)} | y = ${reg.slope.toFixed(6)}x + ${reg.intercept.toFixed(2)}`,
+          left: 12, top: 8,
+          textStyle: { color: '#131722', fontSize: 13, fontWeight: 600 }
+        },
+        visualMap: colorMode === 'hour' ? undefined : colorMode === 'date' ? dateVisualMap(3, 0) : {
+          type: 'continuous',
+          seriesIndex: 0,
+          dimension: 1,
+          min: globalMinY !== Infinity ? globalMinY : 0,
+          max: globalMaxY !== -Infinity ? globalMaxY : 500,
+          calculable: true, orient: 'vertical', right: 10, top: 60, itemHeight: 120,
+          inRange: { color: ['#2563eb', '#06b6d4', '#22c55e', '#eab308', '#f97316', '#ef4444'] },
+          text: ['高价', '低价'],
+          textStyle: { fontSize: 10, color: '#787b86' }
+        },
+        xAxis: { type: 'value', name: '竞价空间 (MW)', nameLocation: 'center', nameGap: 28, min: axisXMin, max: axisXMax,
+          nameTextStyle: { color: '#787b86', fontSize: 11 }, axisLabel: { color: '#131722', fontSize: 10 },
+          splitLine: { lineStyle: { color: '#f0f3fa' } } },
+        yAxis: { type: 'value', name: '日前价格 (元/MWh)', nameLocation: 'center', nameGap: 40, min: axisYMin, max: axisYMax,
+          nameTextStyle: { color: '#787b86', fontSize: 11 }, axisLabel: { color: '#131722', fontSize: 10 },
+          splitLine: { lineStyle: { color: '#f0f3fa' } } },
+        series: [
+          { name: scaleLabel, type: 'scatter', data: pts, symbolSize: 10,
+            itemStyle: { color: '#1e40af', opacity: 0.75 }, emphasis: { itemStyle: { opacity: 1 } } },
+          ...(regLine.length ? [{ name: '线性回归趋势', type: 'line', data: regLine, symbol: 'none',
+            lineStyle: { color: '#131722', width: 2, type: 'dashed' as const }, tooltip: { show: false }, z: 10 }] : [])
+        ]
+      };
+    }
+
     // Group hourly records into 24 periods
     const hourSeriesMap: Record<number, any[]> = {};
     for (let h = 1; h <= 24; h++) hourSeriesMap[h] = [];
@@ -889,21 +1232,13 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
       return selectedBiddingHours.includes(h);
     };
 
-    let globalMinX = Infinity, globalMaxX = -Infinity;
-    let globalMinY = Infinity, globalMaxY = -Infinity;
-
     filtered.forEach(r => {
       const bs = r.bidding_space;
       const price = r.price_dayahead;
       const period = r.period;
       if (bs != null && price != null && isFinite(bs) && isFinite(price) && period != null && period >= 1 && period <= 24) {
         const timeLabel = `${r.date} ${String(period).padStart(2, '0')}:00`;
-        hourSeriesMap[period].push([bs, price, timeLabel, period]);
-
-        if (bs < globalMinX) globalMinX = bs;
-        if (bs > globalMaxX) globalMaxX = bs;
-        if (price < globalMinY) globalMinY = price;
-        if (price > globalMaxY) globalMaxY = price;
+        hourSeriesMap[period].push([bs, price, timeLabel, period, dayjs(r.date!).diff(winStart, 'day')]);
 
         if (isHourVisible(period)) {
           allPairs.push([bs, price, timeLabel]);
@@ -960,20 +1295,6 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
       });
     }
 
-    if (globalMinX !== Infinity) {
-      seriesList.push({
-        name: 'global-bounds',
-        type: 'scatter',
-        data: [[globalMinX, globalMinY], [globalMaxX, globalMaxY]],
-        symbolSize: 0,
-        itemStyle: { opacity: 0 },
-        tooltip: { show: false },
-        hoverAnimation: false,
-        legendHoverLink: false,
-        z: -1
-      });
-    }
-
 
 
     return {
@@ -996,15 +1317,16 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
         textStyle: { color: '#131722', fontSize: 12 },
         extraCssText: 'box-shadow: 0 4px 12px rgba(0,0,0,0.15); border-radius: 6px; padding: 10px;'
       },
-      grid: { left: 16, right: !colorByHour ? 60 : 30, top: 40, bottom: 40, containLabel: true },
+      grid: { left: 16, right: colorMode === 'hour' ? 30 : 60, top: 40, bottom: 40, containLabel: true },
       title: {
         text: `日前竞价空间 vs 日前价格 散点分布图   |   范围: ${minDate} 至 ${maxDate} | N = ${allPairs.length} | R² = ${reg.r2.toFixed(4)} | y = ${reg.slope.toFixed(6)}x + ${reg.intercept.toFixed(2)}`,
-        left: 12, 
+        left: 12,
         top: 8,
         textStyle: { color: '#131722', fontSize: 13, fontWeight: 600 }
       },
-      visualMap: !colorByHour ? {
+      visualMap: colorMode === 'hour' ? undefined : colorMode === 'date' ? dateVisualMap(4, Array.from({ length: 24 }, (_, i) => i)) : {
         type: 'continuous',
+        seriesIndex: Array.from({ length: 24 }, (_, i) => i),
         dimension: 1,
         min: globalMinY !== Infinity ? globalMinY : 0,
         max: globalMaxY !== -Infinity ? globalMaxY : 500,
@@ -1018,26 +1340,30 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
         },
         text: ['高价', '低价'],
         textStyle: { fontSize: 10, color: '#787b86' }
-      } : undefined,
-      xAxis: { 
-        type: 'value', 
-        name: '竞价空间 (MW)', 
-        nameLocation: 'center', 
-        nameGap: 28,
-        nameTextStyle: { color: '#787b86', fontSize: 12, fontWeight: 500 },
-        axisLabel: { color: '#131722', fontSize: 10 },
-        splitLine: { lineStyle: { color: '#f0f3fa' } },
-        axisLine: { lineStyle: { color: '#e0e3eb' } } 
       },
-      yAxis: { 
-        type: 'value', 
-        name: '日前价格 (元/MWh)', 
-        nameLocation: 'center', 
-        nameGap: 48,
+      xAxis: {
+        type: 'value',
+        name: '竞价空间 (MW)',
+        nameLocation: 'center',
+        nameGap: 28,
+        min: axisXMin,
+        max: axisXMax,
         nameTextStyle: { color: '#787b86', fontSize: 12, fontWeight: 500 },
         axisLabel: { color: '#131722', fontSize: 10 },
         splitLine: { lineStyle: { color: '#f0f3fa' } },
-        axisLine: { show: false } 
+        axisLine: { lineStyle: { color: '#e0e3eb' } }
+      },
+      yAxis: {
+        type: 'value',
+        name: '日前价格 (元/MWh)',
+        nameLocation: 'center',
+        nameGap: 48,
+        min: axisYMin,
+        max: axisYMax,
+        nameTextStyle: { color: '#787b86', fontSize: 12, fontWeight: 500 },
+        axisLabel: { color: '#131722', fontSize: 10 },
+        splitLine: { lineStyle: { color: '#f0f3fa' } },
+        axisLine: { show: false }
       },
       series: seriesList
     };
@@ -2070,11 +2396,126 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
             </div>
           )}
 
+          {/* ===== PAGE 8: CONGESTION ANALYSIS ===== */}
+          {page === 'page8' && (
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '10px', gap: '10px', boxSizing: 'border-box', background: '#f5f7fa', overflowY: 'auto' }}>
+              <div style={{ display: 'flex', gap: '14px', alignItems: 'center', flexShrink: 0, flexWrap: 'wrap', background: '#fff', borderRadius: '10px', border: '1px solid #e0e3eb', boxShadow: '0 2px 8px rgba(19,23,34,0.05)', padding: '6px 16px' }}>
+                <span style={{ fontWeight: 700, color: '#131722', fontSize: '15px' }}>阻塞分析</span>
+                <div style={{ width: '1px', height: '20px', background: '#e0e3eb' }} />
+                {!nodeData && <span style={{ fontSize: '12px', color: '#f23645' }}>未找到 nodes.json，请先运行数据解析脚本</span>}
+                {nodeData && (
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      value={nodeSearch}
+                      onChange={e => setNodeSearch(e.target.value)}
+                      onFocus={e => e.target.select()}
+                      placeholder={selectedNode}
+                      style={{ width: '280px', padding: '4px 10px', fontSize: '12px', border: '1px solid #e0e3eb', borderRadius: '6px', outline: 'none', color: '#131722' }}
+                    />
+                    {nodeSearch && (
+                      <div style={{ position: 'absolute', top: '100%', left: 0, zIndex: 30, width: '340px', maxHeight: '260px', overflowY: 'auto', background: '#fff', border: '1px solid #e0e3eb', borderRadius: '8px', boxShadow: '0 4px 16px rgba(19,23,34,0.12)', marginTop: 4 }}>
+                        {nodeData.nodes.filter(n => n.toLowerCase().includes(nodeSearch.toLowerCase())).slice(0, 50).map(n => (
+                          <div key={n}
+                            onMouseDown={() => { setSelectedNode(n); setNodeSearch(''); }}
+                            style={{ padding: '5px 12px', fontSize: '12px', cursor: 'pointer', color: n === selectedNode ? '#2962ff' : '#4b5563', fontWeight: n === selectedNode ? 600 : 400, background: n === selectedNode ? '#f0f3fa' : 'transparent' }}
+                            onMouseEnter={e => (e.currentTarget.style.background = '#f5f7fa')}
+                            onMouseLeave={e => (e.currentTarget.style.background = n === selectedNode ? '#f0f3fa' : 'transparent')}>
+                            {n}
+                          </div>
+                        ))}
+                        {nodeData.nodes.filter(n => n.toLowerCase().includes(nodeSearch.toLowerCase())).length === 0 &&
+                          <div style={{ padding: '8px 12px', fontSize: '12px', color: '#9ca3af' }}>无匹配节点</div>}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {nodeStats && (
+                  <div style={{ display: 'flex', gap: '18px', fontSize: '12px', color: '#787b86', marginLeft: 'auto' }}>
+                    <span>平均价差 <b style={{ color: nodeStats.avg >= 0 ? '#f23645' : '#089981', fontSize: '14px' }}>{nodeStats.avg >= 0 ? '+' : ''}{nodeStats.avg.toFixed(2)}</b> 元/MWh</span>
+                    <span>最大价差 <b style={{ color: '#f23645', fontSize: '14px' }}>+{nodeStats.max.toFixed(2)}</b> <span style={{ fontSize: '11px' }}>({nodeStats.maxTime})</span></span>
+                    <span>阻塞频率 <b style={{ color: '#131722', fontSize: '14px' }}>{nodeStats.freq.toFixed(1)}%</b></span>
+                  </div>
+                )}
+              </div>
+
+              {nodeData && (
+                <>
+                  {/* Chart 1: node price vs unified price + spread bars */}
+                  <div style={{ height: '380px', flexShrink: 0, background: '#fff', borderRadius: '10px', border: '1px solid #e0e3eb', boxShadow: '0 2px 8px rgba(19,23,34,0.05)', padding: '10px 12px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontSize: '13px', fontWeight: 600, color: '#131722', flexShrink: 0 }}>
+                      {selectedNode} <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 400 }}>节点价 vs 统一结算价 · 价差=节点价−统一价，越高阻塞越严重</span>
+                    </span>
+                    <div style={{ flex: 1, minHeight: 0 }}>
+                      <ReactECharts option={buildNodeCompareChart()} style={{ height: '100%', width: '100%' }} notMerge />
+                    </div>
+                  </div>
+
+                  {/* Daily evolution: date x 24h heatmap + per-hour trend (linked) */}
+                  <div style={{ height: '380px', flexShrink: 0, display: 'flex', gap: '10px' }}>
+                    <div style={{ flex: '0 0 46%', minWidth: 0, background: '#fff', borderRadius: '10px', border: '1px solid #e0e3eb', boxShadow: '0 2px 8px rgba(19,23,34,0.05)', padding: '10px 12px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 600, color: '#131722', flexShrink: 0 }}>逐日分时热力图 <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 400 }}>日期×24时段 · 点击格子将小时加入右侧趋势</span></span>
+                      <div style={{ flex: 1, minHeight: 0 }}>
+                        <ReactECharts option={buildNodeDailyHeatmap()} style={{ height: '100%', width: '100%' }} notMerge
+                          onEvents={{ click: (p: any) => { if (p.value) toggleHour(p.value[0] + 1); } }} />
+                      </div>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0, background: '#fff', borderRadius: '10px', border: '1px solid #e0e3eb', boxShadow: '0 2px 8px rgba(19,23,34,0.05)', padding: '10px 12px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, flexWrap: 'wrap', gap: '4px' }}>
+                        <span style={{ fontSize: '13px', fontWeight: 600, color: '#131722' }}>分时逐日趋势 <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 400 }}>虚线=7日均线 · Ctrl多选 · Shift连选</span></span>
+                        <div style={{ display: 'flex', gap: '10px', fontSize: '11px', color: '#787b86' }}>
+                          {hourEvolutionStats.map(s => (
+                            <span key={s.hour}>
+                              {s.hour}时: {s.firstAvg != null ? s.firstAvg.toFixed(1) : '-'} → {s.lastAvg != null ? s.lastAvg.toFixed(1) : '-'}
+                              {s.delta != null && <b style={{ color: s.delta <= 0 ? '#089981' : '#f23645' }}> ({s.delta <= 0 ? '缓解' : '恶化'}{Math.abs(s.delta).toFixed(1)})</b>}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '3px', flexWrap: 'wrap', padding: '6px 0 2px', flexShrink: 0 }}>
+                        {Array.from({ length: 24 }, (_, i) => i + 1).map(h => (
+                          <button key={h} onClick={(e) => handleNodeHourClick(h, e)}
+                            style={{
+                              padding: '1px 6px', fontSize: '10px', borderRadius: '10px', cursor: 'pointer',
+                              border: selectedHours.includes(h) ? 'none' : '1px solid #e0e3eb',
+                              background: selectedHours.includes(h) ? '#131722' : '#f3f4f6',
+                              color: selectedHours.includes(h) ? '#fff' : '#4b5563'
+                            }}>
+                            {h}
+                          </button>
+                        ))}
+                      </div>
+                      <div style={{ flex: 1, minHeight: 0 }}>
+                        <ReactECharts option={buildNodeHourTrendChart()} style={{ height: '100%', width: '100%' }} notMerge />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Bottom row: ranking + heatmap */}
+                  <div style={{ height: '380px', flexShrink: 0, display: 'flex', gap: '10px' }}>
+                    <div style={{ flex: '0 0 42%', minWidth: 0, background: '#fff', borderRadius: '10px', border: '1px solid #e0e3eb', boxShadow: '0 2px 8px rgba(19,23,34,0.05)', padding: '10px 12px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 600, color: '#131722', flexShrink: 0 }}>节点平均价差排行 <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 400 }}>TOP 20 · 点击切换节点</span></span>
+                      <div style={{ flex: 1, minHeight: 0 }}>
+                        <ReactECharts option={buildNodeRankChart()} style={{ height: '100%', width: '100%' }} notMerge
+                          onEvents={{ click: (p: any) => { if (p.name) setSelectedNode(p.name); } }} />
+                      </div>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0, background: '#fff', borderRadius: '10px', border: '1px solid #e0e3eb', boxShadow: '0 2px 8px rgba(19,23,34,0.05)', padding: '10px 12px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+                      <span style={{ fontSize: '13px', fontWeight: 600, color: '#131722', flexShrink: 0 }}>节点×小时 价差热力图 <span style={{ fontSize: '11px', color: '#9ca3af', fontWeight: 400 }}>价差最大的30个节点 · 红=正价差(阻塞)</span></span>
+                      <div style={{ flex: 1, minHeight: 0 }}>
+                        <ReactECharts option={buildNodeHeatmap()} style={{ height: '100%', width: '100%' }} notMerge />
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           {/* ===== PAGE 3: BIDDING SPACE ===== */}
           {page === 'page3' && (
             <div style={{ display: 'flex', flexDirection: 'row', height: '100%', padding: '8px', gap: '12px', boxSizing: 'border-box' }}>
               {/* Sidebar Pill Control Toolbar */}
-              <div style={{ 
+              <div style={{
                 display: 'flex',
                 flexDirection: 'column',
                 width: '200px',
@@ -2085,9 +2526,11 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
                 borderRadius: '8px',
                 border: '1px solid #e0e3eb',
                 boxSizing: 'border-box',
-                overflowY: 'auto'
+                overflowY: 'auto',
+                ...(timeScale !== 'hourly' ? { opacity: 0.4, pointerEvents: 'none' as const } : {})
               }}>
                 <div style={{ fontSize: '14px', fontWeight: 600, color: '#131722', marginBottom: '4px' }}>时段筛选</div>
+                {timeScale !== 'hourly' && <div style={{ fontSize: '11px', color: '#9ca3af' }}>仅"24时段"模式下可用</div>}
                 {/* "All" Pill */}
                 <button
                   onClick={() => { setSelectedBiddingHours([]); setLastClickedHour(null); }}
@@ -2141,10 +2584,28 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
                 </div>
 
                 <div style={{ height: '1px', background: '#e0e3eb', margin: '4px 0' }} />
-                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#131722', cursor: 'pointer' }}>
-                  <input type="checkbox" checked={colorByHour} onChange={e => setColorByHour(e.target.checked)} style={{ cursor: 'pointer' }} />
-                  分时段着色
-                </label>
+                <div style={{ fontSize: '12px', color: '#787b86', marginBottom: '2px' }}>着色方式</div>
+                <div style={{ display: 'flex', gap: '4px', background: '#f0f3fa', borderRadius: '8px', padding: '3px' }}>
+                  {([['hour', '按时段'], ['price', '按价格'], ['date', '按日期']] as const).map(([mode, label]) => {
+                    const disabled = mode === 'hour' && timeScale !== 'hourly';
+                    const active = colorMode === mode;
+                    return (
+                      <button key={mode}
+                        disabled={disabled}
+                        onClick={() => setColorMode(mode)}
+                        style={{
+                          flex: 1, padding: '4px 0', fontSize: '12px', border: 'none', borderRadius: '6px',
+                          cursor: disabled ? 'not-allowed' : 'pointer',
+                          fontWeight: active ? 600 : 400,
+                          background: active ? '#fff' : 'transparent',
+                          color: disabled ? '#c3c9d4' : active ? '#2962ff' : '#787b86',
+                          boxShadow: active ? '0 1px 3px rgba(19,23,34,0.1)' : 'none'
+                        }}>
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Chart container */}
