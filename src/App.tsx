@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import ReactECharts from 'echarts-for-react';
 import * as echarts from 'echarts';
 import dayjs from 'dayjs';
@@ -87,6 +87,10 @@ const HEDONG_TS_CFG: { [k: string]: { ts: [string, string, string, string, strin
   wind:  { ts: ['hedong_wind_speed', 'wind', '风速 (河东)', '风电出力', '#0d9488'] },
   solar: { ts: ['hedong_solar_radiation', 'solar', '辐射 (河东)', '光伏出力', '#ea580c'] },
 };
+
+// × marker for sparse forecast points (e.g. days with only 3/9/15/21h).
+// NOTE: path symbols are FILLED in ECharts, so use a closed X polygon (thin arms)
+const SPARSE_X = 'path://M0,0.8L0.8,0L4,3.2L7.2,0L8,0.8L4.8,4L8,7.2L7.2,8L4,4.8L0.8,8L0,7.2L3.2,4Z';
 
 const HOUR_COLORS_24 = [
   '#2563eb', // 01:00 宝蓝
@@ -302,7 +306,6 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
   };
 
   useEffect(() => {
-    echarts.connect('sync-overview');
     echarts.connect('weather-compare');
   }, []);
 
@@ -421,7 +424,9 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
       }
     }
     
-    return data.rolling.filter((r: any) => r.target_date >= minDate && r.target_date <= maxDate);
+    // Drop target dates beyond 日前价格 coverage (day_ahead_price 0 = price missing,
+    // spread would be garbage: full weighted price vs 0)
+    return data.rolling.filter((r: any) => r.target_date >= minDate && r.target_date <= maxDate && r.day_ahead_price);
   }, [data, dateRange, selectedDate, customDateStart, customDateEnd]);
 
   const rollingDatesCount = useMemo(() => {
@@ -484,9 +489,27 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
     };
   }, [data]);
 
-  const availableDates = useMemo(() => data ? data.daily.map(r => r.date!) : [], [data]);
+const availableDates = useMemo(() => data ? data.daily.map(r => r.date!) : [], [data]);
 
-  const isLargeDataset = currentData.length > 500;
+  // Latest date that has 统一结算点价格日前价格(结算) — used by the right sidebar
+  const latestPriceDate = useMemo(() => {
+    if (!data) return null;
+    for (let i = data.daily.length - 1; i >= 0; i--) {
+      if (data.daily[i].price_dayahead != null) return data.daily[i].date!;
+    }
+    return null;
+  }, [data]);
+
+  // Latest date that has 日前运行信息 (load etc.) — boundary conditions date
+  const latestOpsDate = useMemo(() => {
+    if (!data) return null;
+    for (let i = data.daily.length - 1; i >= 0; i--) {
+      if (data.daily[i].load != null) return data.daily[i].date!;
+    }
+    return null;
+  }, [data]);
+
+const isLargeDataset = currentData.length > 500;
 
   // ===== CHART BUILDERS =====
 
@@ -540,16 +563,16 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
         axisLine: { lineStyle: { color: '#e0e3eb' } }, splitLine: { show: false },
         axisPointer: { show: true, type: 'line', snap: true, label: { show: false }, lineStyle: { color: '#131722', width: 1, type: 'dashed', opacity: 0.5 } }
       },
-      yAxis: { 
-        type: 'value', position: 'right', axisLabel: { color: '#131722', fontSize: 11 }, splitLine: { lineStyle: { color: '#f0f3fa' } }, axisLine: { show: false }, axisTick: { show: false },
+      yAxis: {
+        type: 'value', position: 'right', scale: true, axisLabel: { color: '#131722', fontSize: 11 }, splitLine: { lineStyle: { color: '#f0f3fa' } }, axisLine: { show: false }, axisTick: { show: false },
         axisPointer: { show: true, type: 'line', snap: false, triggerEmphasis: false, label: { show: false }, lineStyle: { color: '#131722', width: 1, type: 'dashed', opacity: 0.5 } }
       },
       dataZoom: [{ type: 'inside', start: 0, end: 100 }],
       series: keys.map(k => ({
         name: METRICS[k].label, type: 'line', data: currentData.map((r: any) => r[k]),
-        itemStyle: { color: METRICS[k].color, opacity: 0 }, emphasis: { itemStyle: { opacity: 1 } },
+        itemStyle: { color: METRICS[k].color },
         lineStyle: { width: k === 'load' ? 2 : 1.5 },
-        symbol: 'circle', showSymbol: true, symbolSize: 8, triggerLineEvent: true,
+        symbol: 'circle', showSymbol: true, symbolSize: 3, triggerLineEvent: true,
         sampling: isLargeDataset ? 'lttb' : undefined, large: isLargeDataset,
         ...(k === 'load' ? { areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(242,54,69,0.08)' }, { offset: 1, color: 'rgba(242,54,69,0)' }] } } } : {})
       }))
@@ -755,30 +778,79 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
 
   const buildWeatherTimeSeriesChart = (weatherKey: string, outputKey: string, weatherLabel: string, outputLabel: string, color: string) => {
     let raw = currentData;
-    const xData: string[] = [];
-    const weatherData: (number | null)[] = [];
-    const outputData: (number | null)[] = [];
-    
+
+    // True timestamp per row → time-proportional x-axis (9:00 sits 3x further
+    // from 6:00 than two adjacent hours, sparse points no longer squeezed)
+    const isHourly = timeScale === 'hourly';
+    const tsOf = (r: any): number => {
+      if (isHourly && r.date && r.period != null) return dayjs(r.date).add(r.period, 'hour').valueOf();
+      const dStr = r.date || r.date_str || '';
+      if (dStr) return dayjs(dStr).valueOf();
+      if (r.week) {
+        const y = parseInt(r.week.substring(0, 4));
+        const w = parseInt(r.week.substring(6));
+        return dayjs(`${y}-01-01`).add((w - 1) * 7, 'day').valueOf();
+      }
+      if (r.month) return dayjs(r.month + '-01').valueOf();
+      return 0;
+    };
+
+    // Per-POINT sparsity: a weather value is "sparse" when neither adjacent
+    // hour (±1h, same date) has a weather value — e.g. 07-28 is dense 1~15h
+    // but sparse at 18/21/24h.
+    const wxPeriods: Record<string, Set<number>> = {};
+    if (isHourly) {
+      raw.forEach((r: any) => {
+        if (r.date && r.period != null && r[weatherKey] != null) {
+          if (!wxPeriods[r.date]) wxPeriods[r.date] = new Set();
+          wxPeriods[r.date].add(r.period);
+        }
+      });
+    }
+
+    const weatherLine: [number, number | null][] = [];
+    const sparsePts: [number, number][] = [];
+    const outputLine: [number, number | null][] = [];
     raw.forEach((r: any) => {
-      let dateLabel = r.date || r.date_str || r.week || r.month || '';
-      if (timeScale === 'hourly') dateLabel = `${r.date} ${String(r.period).padStart(2, '0')}:00`;
-      xData.push(dateLabel);
-      weatherData.push(r[weatherKey] != null ? r[weatherKey] : null);
-      outputData.push(r[outputKey] != null ? r[outputKey] : null);
+      const t = tsOf(r);
+      const wv = r[weatherKey] != null ? r[weatherKey] : null;
+      const ov = r[outputKey] != null ? r[outputKey] : null;
+      const set = isHourly && r.date ? wxPeriods[r.date] : undefined;
+      const sparse = !!set && wv != null && !set.has(r.period - 1) && !set.has(r.period + 1);
+      if (sparse) sparsePts.push([t, wv as number]); else weatherLine.push([t, wv]);
+      outputLine.push([t, ov]);
     });
 
     return {
-      tooltip: { trigger: 'axis', backgroundColor: '#fff', borderColor: '#e0e3eb', textStyle: { color: '#131722', fontSize: 12 } },
+      tooltip: { trigger: 'axis', backgroundColor: '#fff', borderColor: '#e0e3eb', textStyle: { color: '#131722', fontSize: 12 },
+        formatter: (params: any[]) => {
+          if (!Array.isArray(params) || !params.length) return '';
+          let html = `<div style="font-weight:600;margin-bottom:4px;">${dayjs(Number(params[0].axisValue)).format(isHourly ? 'YYYY-MM-DD HH:mm' : 'YYYY-MM-DD')}</div>`;
+          const seen = new Set<string>();
+          params.forEach((p: any) => {
+            const v = Array.isArray(p.value) ? p.value[1] : p.value;
+            if (v == null || seen.has(p.seriesName)) return;
+            seen.add(p.seriesName);
+            html += `<div>${p.marker} ${p.seriesName}: <b>${Number(v).toFixed(2)}</b></div>`;
+          });
+          return html;
+        } },
       legend: { data: [weatherLabel, outputLabel], top: 4, textStyle: { fontSize: 11, color: '#787b86' } },
       grid: { left: 45, right: 45, top: 30, bottom: 20 },
-      xAxis: { type: 'category', data: xData, axisLabel: { fontSize: 9, color: '#787b86' }, axisLine: { lineStyle: { color: '#e0e3eb' } } },
+      xAxis: { type: 'time',
+        axisLabel: { fontSize: 9, color: '#787b86', formatter: (v: number) => dayjs(v).format(isHourly ? 'MM-DD HH:mm' : timeScale === 'monthly' ? 'YY-MM' : 'MM-DD'), hideOverlap: true },
+        axisLine: { lineStyle: { color: '#e0e3eb' } } },
       yAxis: [
         { type: 'value', name: outputLabel, scale: true, nameTextStyle: { fontSize: 9, color: '#787b86' }, axisLabel: { fontSize: 9, color: '#787b86' }, splitLine: { show: false } },
         { type: 'value', name: weatherLabel, scale: true, nameTextStyle: { fontSize: 9, color: '#787b86' }, axisLabel: { fontSize: 9, color: '#787b86' }, splitLine: { show: false } }
       ],
       series: [
-        { name: outputLabel, type: 'line', data: outputData, yAxisIndex: 0, itemStyle: { color: color }, symbol: 'none', lineStyle: { width: 1.5 } },
-        { name: weatherLabel, type: 'line', data: weatherData, yAxisIndex: 1, itemStyle: { color: '#787b86' }, symbol: 'none', lineStyle: { width: 1.5, type: 'dashed' } }
+        { name: outputLabel, type: 'line', data: outputLine, yAxisIndex: 0, itemStyle: { color: color }, symbol: 'none', lineStyle: { width: 1.5 } },
+        { name: weatherLabel, type: 'line', data: weatherLine, yAxisIndex: 1, itemStyle: { color: '#787b86' }, symbol: 'none', lineStyle: { width: 1.5, type: 'dashed' } },
+        // sparse forecast points: thin × markers connected by a distinct dashed line
+        { name: weatherLabel, type: 'line', data: sparsePts, yAxisIndex: 1,
+          symbol: SPARSE_X, symbolSize: 10, showSymbol: true, showAllSymbol: true,
+          lineStyle: { width: 1.5, color: '#f59e0b', type: 'dashed' }, itemStyle: { color: '#f59e0b' }, z: 5 }
       ]
     };
   };
@@ -822,6 +894,9 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
     const b = getDayValues(dateB, key);
     const outAName = output ? `${output.label}(A)` : '';
     const outBName = output ? `${output.label}(B)` : '';
+    // Sparse forecast point (e.g. only 3/9/15/21h): isolated from both neighbors
+    const isIsolated = (arr: (number | null)[], i: number) =>
+      arr[i] != null && (i === 0 || arr[i - 1] == null) && (i === arr.length - 1 || arr[i + 1] == null);
     const barSeries = output ? [
       { name: outAName, type: 'bar', data: getDayValues(dateA, output.key), yAxisIndex: 1, barWidth: '45%',
         itemStyle: { color: output.color, opacity: 0.7 } },
@@ -857,8 +932,14 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
         { type: 'value', scale: true, name: output.unit, nameTextStyle: { fontSize: 9, color: '#787b86' }, axisLabel: { fontSize: 9, color: '#787b86' }, splitLine: { show: false } }
       ] : { type: 'value', scale: true, axisLabel: { fontSize: 9, color: '#787b86' }, splitLine: { lineStyle: { color: '#f0f3fa' } } },
       series: [
-        { name: dateA, type: 'line', data: a, connectNulls: true, symbol: 'circle', symbolSize: 4, lineStyle: { width: 2, color }, itemStyle: { color } },
-        { name: dateB, type: 'line', data: b, connectNulls: true, symbol: 'circle', symbolSize: 3, lineStyle: { width: 1.5, color: '#94a3b8', type: 'dashed' }, itemStyle: { color: '#94a3b8' } },
+        { name: dateA, type: 'line', data: a, connectNulls: false, showAllSymbol: true,
+          symbol: (_v: any, p: any) => isIsolated(a, p.dataIndex) ? SPARSE_X : 'circle',
+          symbolSize: (_v: any, p: any) => isIsolated(a, p.dataIndex) ? 10 : 4,
+          lineStyle: { width: 2, color }, itemStyle: { color } },
+        { name: dateB, type: 'line', data: b, connectNulls: false, showAllSymbol: true,
+          symbol: (_v: any, p: any) => isIsolated(b, p.dataIndex) ? SPARSE_X : 'circle',
+          symbolSize: (_v: any, p: any) => isIsolated(b, p.dataIndex) ? 9 : 3,
+          lineStyle: { width: 1.5, color: '#94a3b8', type: 'dashed' }, itemStyle: { color: '#94a3b8' } },
         ...barSeries
       ]
     };
@@ -1378,9 +1459,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
       });
     }
 
-
-
-    return {
+return {
       animation: false,
       tooltip: {
         trigger: 'item',
@@ -1659,8 +1738,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
     return { heatmapData, trendData, histData, avgPrices };
   };
 
-  
-  const buildStrategyScannerHeatmap = () => {
+const buildStrategyScannerHeatmap = () => {
     if (!strategyScannerData || strategyScannerData.length === 0) return {};
     const periods = Array.from({length: 24}, (_, i) => String(i + 1));
     const values = strategyScannerData.map(d => d[2]);
@@ -1962,8 +2040,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
     };
   };
 
-  
-  // ===============================
+// ===============================
   // Page 7: Strategy Spread (Formula: 日前 - 现货)
   // ===============================
   const strategyFilteredData = useMemo(() => {
@@ -1988,7 +2065,8 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
       }
       minDate = new Date(maxDateObj.getTime() - (days - 1) * 24 * 3600 * 1000).toISOString().split('T')[0];
     }
-    return data.rolling.filter(r => r.target_date && r.target_date >= minDate && r.target_date <= maxDate);
+    // Drop target dates beyond 日前价格 coverage (day_ahead_price 0 = price missing)
+    return data.rolling.filter(r => r.target_date && r.target_date >= minDate && r.target_date <= maxDate && r.day_ahead_price);
   }, [data, dateRange, selectedDate, customDateStart, customDateEnd]);
 
   const strategySpreadData = useMemo(() => {
@@ -2102,9 +2180,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
     { abbr: 'SD', bg: '#2962ff', name: '水电出力', key: 'hydro' },
   ];
 
-
-
-  // ===============================
+// ===============================
   // Page 6: Rolling Opportunities
   // ===============================
 
@@ -2307,9 +2383,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
           ))}
           <div className="tv-toolbar-sep" />
 
-
-
-          {/* Page 1 only: view toggle */}
+{/* Page 1 only: view toggle */}
           {page === 'page1' && (
             <>
               <div className="tv-toolbar-sep" />
@@ -2355,10 +2429,10 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
             <>
 
               <div style={{ height: '60%', paddingTop: 4 }}>
-                <ReactECharts option={buildOverviewChart()} style={{ height: '100%' }} onEvents={{ legendselectchanged: (p: any) => handleLegendSelect('overview', p) }} onChartReady={(c: any) => c.group = 'sync-overview'} notMerge />
+                <ReactECharts option={buildOverviewChart()} style={{ height: '100%' }} onEvents={{ legendselectchanged: (p: any) => handleLegendSelect('overview', p) }} notMerge />
               </div>
               <div style={{ height: '40%', borderTop: '1px solid #e0e3eb' }}>
-                <ReactECharts option={buildPriceChart()} style={{ height: '100%' }} onEvents={{ legendselectchanged: (p: any) => handleLegendSelect('price', p) }} onChartReady={(c: any) => c.group = 'sync-overview'} notMerge />
+                <ReactECharts option={buildPriceChart()} style={{ height: '100%' }} onEvents={{ legendselectchanged: (p: any) => handleLegendSelect('price', p) }} notMerge />
               </div>
             </>
           )}
@@ -2843,8 +2917,7 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
           )}
         </div>
 
-        
-        {/* ===== PAGE 7: STRATEGY SPREAD ===== */}
+{/* ===== PAGE 7: STRATEGY SPREAD ===== */}
         {page === 'page7' && (
           <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, height: '100%', padding: '10px', gap: '10px', boxSizing: 'border-box', background: '#f5f7fa' }}>
 
@@ -2906,15 +2979,14 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
           </div>
         )}
 
-{/* RIGHT SIDEBAR (hidden on chart-dense pages to give the charts more room) */}
-        {isSidebarVisible && page !== 'page7' && page !== 'page5' && page !== 'page2' && (
+{/* RIGHT SIDEBAR (shown on first load; once closed stays closed on every page until reopened via ☰) */}
+        {isSidebarVisible && (
           <div className="tv-right-sidebar">
           <div className="tv-watchlist-header">
-            <span>自选表</span>
+            <span>边界条件 ({latestOpsDate || '—'})</span>
             <div className="tv-watchlist-header-icons"><span>+</span><span>⊞</span><span>⋯</span></div>
           </div>
           <div className="tv-watchlist-cols"><span style={{ flex: 1 }}>Symbol</span><span>Last</span><span>Chg%</span></div>
-          <div className="tv-watchlist-category">▾ 基本面指标 ({selectedDate || '—'})</div>
           {watchlistItems.map(item => {
             const stat = latestStats ? (latestStats as any)[item.key] : null;
             return (
@@ -2930,8 +3002,8 @@ const [selectedRollingPeriod, setSelectedRollingPeriod] = useState<number>(1);
           {/* Detail panel */}
           <div className="tv-detail-panel">
             <div className="tv-detail-header">
-              <div className="tv-detail-avatar">GS</div>
-              <span className="tv-detail-name">GS_POWER ({selectedDate || '—'})</span>
+              <div className="tv-detail-avatar">价</div>
+              <span className="tv-detail-name">日前价格 ({latestPriceDate || '—'})</span>
             </div>
             <div className="tv-detail-meta">
               甘肃省电力交易中心 · 现货市场<br />
